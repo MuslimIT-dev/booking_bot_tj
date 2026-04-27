@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Bot {
+  id                Int                 @id @default(autoincrement())
+  token             String              @unique
+  ownerId           BigInt
+  aboutText         String?             @default("Информация о нас пока не заполнена.")
+  
+  // Обратные связи
+  users             User[]
+  services          Service[]
+  employees         Employee[]
+  appointments      Appointment[]
+  employeeServices  EmployeeService[]
+  workSchedules     WorkSchedule[]
+  scheduleExceptions ScheduleException[]
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  botId       Int
+  // КРИТИЧНО: onDelete: Cascade для удаления бота
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  
+  telegramId  BigInt
+  firstName   String?
+  lastName    String?
+  username    String?
+  phone       String?
+  role        Role     @default(CLIENT)
+  createdAt   DateTime @default(now())
+
+  appointments Appointment[] @relation("ClientAppointments")
+  employee     Employee?
+
+  @@unique([telegramId, botId])
+}
+
+enum ServiceType {
+  SERVICE    // Стрижка, консультация (1 на 1)
+  TRAINING   // Тренинг (группа)
+  WORKSHOP   // Мастер-класс (группа)
+  COURSE     // Курс (группа)
+}
+
+model Service {
+  id               Int                @id @default(autoincrement())
+  botId            Int
+  // КРИТИЧНО: onDelete: Cascade
+  bot              Bot                @relation(fields: [botId], references: [id], onDelete: Cascade)
+  
+  name             String
+  description      String?
+  price            Decimal?
+  durationMinutes  Int
+  type             ServiceType        @default(SERVICE)
+  maxCapacity      Int                @default(1)
+  isActive         Boolean            @default(true)
+  employeeServices EmployeeService[]
+  appointments     Appointment[]
+  eventDate        DateTime?
+  startTime        String?
+}
+
+model Employee {
+  id               Int                @id @default(autoincrement())
+  botId            Int
+  // КРИТИЧНО: onDelete: Cascade
+  bot              Bot                @relation(fields: [botId], references: [id], onDelete: Cascade)
+  
+  userId           Int?               @unique
+  user             User?              @relation(fields: [userId], references: [id])
+  name             String
+  position         String?
+  isActive         Boolean            @default(true)
+  employeeServices EmployeeService[]
+  workSchedules    WorkSchedule[]
+  exceptions       ScheduleException[]
+  appointments     Appointment[]
+}
+
+model EmployeeService {
+  employeeId Int
+  serviceId  Int
+  botId      Int
+  // КРИТИЧНО: onDelete: Cascade на все связи
+  bot        Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  service    Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, serviceId, botId])
+}
+
+model WorkSchedule {
+  id         Int      @id @default(autoincrement())
+  botId      Int
+  // КРИТИЧНО: onDelete: Cascade
+  bot        Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  dayOfWeek  Int      // 1 (Пн) - 7 (Вс)
+  startTime  String   // "HH:mm"
+  endTime    String   // "HH:mm"
+  breakStart String?  // "HH:mm"
+  breakEnd   String?  // "HH:mm"
+
+  @@unique([employeeId, dayOfWeek])
+}
+
+model ScheduleException {
+  id            Int      @id @default(autoincrement())
+  botId         Int
+  // КРИТИЧНО: onDelete: Cascade
+  bot           Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  
+  employeeId    Int
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  exceptionDate DateTime @db.Date
+  isWorking     Boolean  @default(false)
+  startTime     String?
+  endTime       String?
+  reason        String?
+}
+
+model Appointment {
+  id              Int          @id @default(autoincrement())
+  botId           Int
+  // КРИТИЧНО: onDelete: Cascade
+  bot             Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  
+  clientUserId    Int
+  client          User         @relation("ClientAppointments", fields: [clientUserId], references: [id], onDelete: Cascade)
+  serviceId       Int
+  service         Service      @relation(fields: [serviceId], references: [id])
+  employeeId      Int
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  appointmentDate DateTime     @db.Date
+  startTime       String       // "HH:mm"
+  endTime         String       // "HH:mm"
+  clientContact   String
+  status          Status       @default(PENDING)
+  createdAt       DateTime     @default(now())
+  subscriptionUntil DateTime?
+}
+
+enum Role {
+  CLIENT
+  ADMIN
+  EMPLOYEE
+}
+
+enum Status {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
