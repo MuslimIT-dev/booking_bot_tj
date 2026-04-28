@@ -113,3 +113,17 @@ startSystem().then(() => console.log('🚀 Мульти-ботовая сист�
 
 process.once('SIGINT', () => process.exit(0));
 process.once('SIGTERM', () => process.exit(0));
+
+export const runningBots = new Map<number, Telegraf<MyContext>>();
+
+export async function launchSingleBot(botData: any) {
+  try {
+    const bot = new Telegraf<MyContext>(botData.token);
+    setupBotLogic(bot, botData.id);
+    await bot.launch();
+    runningBots.set(botData.id, bot); // Сохраняем экземпляр, чтобы не запустить дубликат
+    console.log(`✅ Новый бот запущен: ID ${botData.id}`);
+  } catch (err) {
+    console.error(`❌ Ошибка запуска бота ID ${botData.id}:`, err);
+  }
+}
