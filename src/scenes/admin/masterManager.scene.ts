@@ -81,6 +81,7 @@ export const registerBotWizard = new Scenes.WizardScene<MyContext>(
           firstName: 'Admin'
         }
       });
+      await launchSingleBot(newBot);
       await ctx.reply(`🎉 Бот запущен! (ID: ${newBot.id})`);
     } catch (e) {
       await ctx.reply('❌ Ошибка БД');
