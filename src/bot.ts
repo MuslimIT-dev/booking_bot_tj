@@ -93,6 +93,7 @@ async function startSystem() {
 
   const allBots = await prisma.bot.findMany();
   for (const botData of allBots) {
+    if (botData.token === process.env.MASTER_BOT_TOKEN) continue;
     await launchSingleBot(botData);
   }
   const masterToken = process.env.MASTER_BOT_TOKEN;
