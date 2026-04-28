@@ -1,7 +1,7 @@
 import { Scenes, Markup } from 'telegraf';
 import { MyContext } from '../../types';
 import { prisma } from '../../db/client';
-import { launchSingleBot } from '../../bot';
+import { launchSingleBot, stopBot } from '../../bot';
 
 export const masterManagerScene = new Scenes.BaseScene<MyContext>('master_manager_scene');
 
@@ -38,6 +38,7 @@ masterManagerScene.action(/^delete_bot_(\d+)$/, async (ctx) => {
   const botId = Number(ctx.match[1]);
   try {
     await prisma.bot.delete({ where: { id: botId } });
+    await stopBot(botId);
     await ctx.answerCbQuery('Бот и все его данные удалены');
     return ctx.scene.reenter();
   } catch (e) {
