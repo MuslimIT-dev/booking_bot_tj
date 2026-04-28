@@ -92,6 +92,10 @@ async function startSystem() {
   masterBot.launch().catch((err) => console.error('❌ Мастер-бот ошибка:', err.message));
 
   const allBots = await prisma.bot.findMany();
+  for (const botData of allBots) {
+    if (botData.token === process.env.MASTER_BOT_TOKEN) continue;
+    await launchSingleBot(botData);
+  }
   const masterToken = process.env.MASTER_BOT_TOKEN;
 
   console.log(`📡 Запуск ${allBots.length} ботов из базы...`);
