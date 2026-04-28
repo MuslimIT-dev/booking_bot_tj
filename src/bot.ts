@@ -131,3 +131,16 @@ export async function launchSingleBot(botData: any) {
     console.error(`❌ Ошибка запуска бота ID ${botData.id}:`, err);
   }
 }
+
+export async function stopBot(botId: number) {
+  const bot = runningBots.get(botId);
+  if (bot) {
+    try {
+      await bot.stop('uninstalled'); // Останавливаем бота
+      runningBots.delete(botId);      // Удаляем из списка активных
+      console.log(`🛑 Бот с ID ${botId} успешно остановлен.`);
+    } catch (err) {
+      console.error(`Ошибка при остановке бота ${botId}:`, err);
+    }
+  }
+}
