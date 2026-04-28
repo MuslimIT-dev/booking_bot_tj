@@ -89,24 +89,27 @@ masterBot.command('start', async (ctx) => {
 });
 
 async function startSystem() {
-  await masterBot.launch();
+  masterBot.launch().catch((err) => console.error('❌ Мастер-бот ошибка:', err.message));
   console.log('👑 Мастер-бот запущен.');
 
-  const allBots = await prisma.bot.findMany();
-  console.log(`📡 Попытка запуска ${allBots.length} ботов из базы...`);
+  try {
+    const allBots = await prisma.bot.findMany();
+    const masterToken = process.env.MASTER_BOT_TOKEN;
 
-  const masterToken = process.env.MASTER_BOT_TOKEN;
+    const clientBots = allBots.filter(b => b.token !== masterToken);
+    console.log(`📡 Запуск ${clientBots.length} клиентских ботов из базы...`);
 
-  for (const botData of allBots) {
-    if (botData.token === masterToken) continue;
-  
-    if (!runningBots.has(botData.id)) {
-      await launchSingleBot(botData);
+    for (const botData of clientBots) {
+      if (!runningBots.has(botData.id)) {
+        await launchSingleBot(botData);
+      }
     }
+  } catch (err) {
+    console.error('❌ Критическая ошибка БД при старте системы:', err);
   }
 }
 
-startSystem().then(() => console.log('🚀 Мульти-ботовая система запущена.'));
+startSystem().then(() => console.log('🚀 Мульти-ботовая система инициализирована.'));
 
 process.once('SIGINT', () => process.exit(0));
 process.once('SIGTERM', () => process.exit(0));
@@ -118,7 +121,7 @@ export async function launchSingleBot(botData: any) {
     const bot = new Telegraf<MyContext>(botData.token);
     setupBotLogic(bot, botData.id);
     await bot.launch();
-    runningBots.set(botData.id, bot); // Сохраняем экземпляр, чтобы не запустить дубликат
+    runningBots.set(botData.id, bot);
     console.log(`✅ Новый бот запущен: ID ${botData.id}`);
   } catch (err) {
     console.error(`❌ Ошибка запуска бота ID ${botData.id}:`, err);
@@ -129,8 +132,8 @@ export async function stopBot(botId: number) {
   const bot = runningBots.get(botId);
   if (bot) {
     try {
-      await bot.stop('uninstalled'); // Останавливаем бота
-      runningBots.delete(botId);      // Удаляем из списка активных
+      await bot.stop('uninstalled');
+      runningBots.delete(botId);
       console.log(`🛑 Бот с ID ${botId} успешно остановлен.`);
     } catch (err) {
       console.error(`Ошибка при остановке бота ${botId}:`, err);
