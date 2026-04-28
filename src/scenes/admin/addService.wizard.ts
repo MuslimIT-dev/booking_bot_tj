@@ -59,7 +59,7 @@ step4.on('text', async (ctx) => {
 
   state.maxCapacity = 1;
   await showSummary(ctx);
-  return ctx.wizard.selectStep(6);
+  return ctx.wizard.selectStep(7);
 });
 
 const step5 = new Composer<MyContext>();
