@@ -1,6 +1,7 @@
 import { Scenes, Markup } from 'telegraf';
 import { MyContext } from '../../types';
 import { prisma } from '../../db/client';
+import { launchSingleBot } from '../../bot';
 
 export const masterManagerScene = new Scenes.BaseScene<MyContext>('master_manager_scene');
 
