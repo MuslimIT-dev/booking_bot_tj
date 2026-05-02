@@ -28,20 +28,33 @@ export async function getFreeSlots(
   const duration = service.durationMinutes;
   const maxCapacity = (service as any).maxCapacity || 1; 
 
-  const date = parseDateStr(dateStr);
-  const startOfDay = new Date(date);
+  const selectedDate = parseDateStr(dateStr);
+  
+  const startOfDay = new Date(selectedDate);
   startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(date);
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (startOfDay.getTime() < today.getTime()) {
+    return [];
+  }
+
+  const endOfDay = new Date(selectedDate);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const dayOfWeek = date.getDay() === 0 ? 7 : date.getDay();
+  const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay();
   const schedule = await prisma.workSchedule.findFirst({
     where: { employeeId, dayOfWeek, botId }
   });
+  
   if (!schedule) return [];
 
   const workStart = timeToMinutes(schedule.startTime);
   const workEnd = timeToMinutes(schedule.endTime);
+  
+  const breakStart = schedule.breakStart ? timeToMinutes(schedule.breakStart) : null;
+  const breakEnd = schedule.breakEnd ? timeToMinutes(schedule.breakEnd) : null;
 
   const scheduledEvents = await prisma.service.findMany({
     where: {
@@ -62,14 +75,23 @@ export async function getFreeSlots(
   });
 
   const availableSlots: string[] = [];
+  
   const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const isToday = startOfDay.getTime() === today.getTime();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes() + 15; 
+  
   const STEP = 30;
 
   for (let slotStart = workStart; slotStart + duration <= workEnd; slotStart += STEP) {
     const slotEnd = slotStart + duration;
+    
     if (isToday && slotStart < currentMinutes) continue;
+
+    if (breakStart !== null && breakEnd !== null) {
+      if (isOverlapping(slotStart, slotEnd, breakStart, breakEnd)) {
+        continue; 
+      }
+    }
 
     const otherEvent = scheduledEvents.find(e => {
       if (!e.startTime) return false;
