@@ -66,6 +66,7 @@ export const registerBotWizard = new Scenes.WizardScene<MyContext>(
   async (ctx) => {
     const adminId = Number((ctx.message as any)?.text);
     const token = ctx.scene.session.tempToken!;
+    
     try {
       const newBot = await prisma.bot.create({ data: { token, ownerId: BigInt(adminId) } });
       await prisma.user.upsert({
@@ -83,11 +84,20 @@ export const registerBotWizard = new Scenes.WizardScene<MyContext>(
           firstName: 'Admin'
         }
       });
-      await launchSingleBot(newBot);
-      await ctx.reply(`🎉 Бот запущен! (ID: ${newBot.id})`);
+
+      await ctx.reply(`⏳ Добавляем бота в базу (ID: ${newBot.id}). Пробуем запустить...`);
+      
+      launchSingleBot(newBot)
+        .then(() => {
+            ctx.reply(`🎉 Бот (ID: ${newBot.id}) успешно запущен и работает!`);
+        })
+        .catch((err) => {
+            ctx.reply(`❌ Ошибка запуска бота (ID: ${newBot.id}). Токен верный? Ошибка: ${err.message}`);
+        });
     } catch (e) {
-      await ctx.reply('❌ Ошибка БД');
+      await ctx.reply('❌ Ошибка БД при создании бота');
     }
+    
     return ctx.scene.enter('master_manager_scene');
   }
 );
