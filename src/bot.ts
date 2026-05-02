@@ -9,6 +9,8 @@ import { masterManagerScene, registerBotWizard, changeAdminWizard } from './scen
 
 dotenv.config();
 
+export const runningBots = new Map<number, { instance: Telegraf<MyContext>, status: 'online' | 'offline' | 'error' }>();
+
 export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
   bot.use(async (ctx, next) => {
     ctx.botId = botDbId;
@@ -88,6 +90,20 @@ masterBot.command('start', async (ctx) => {
   await ctx.scene.enter('master_manager_scene');
 });
 
+export async function launchSingleBot(botData: any) {
+  try {
+    const bot = new Telegraf<MyContext>(botData.token);
+    setupBotLogic(bot, botData.id);
+    await bot.launch({ dropPendingUpdates: true });
+    runningBots.set(botData.id, { instance: bot, status: 'online' });
+    console.log(`✅ Новый бот запущен: ID ${botData.id}`);
+  } catch (err) {
+    runningBots.set(botData.id, { instance: new Telegraf<MyContext>(botData.token), status: 'error' });
+    console.error(`❌ Ошибка запуска бота ID ${botData.id}:`, err);
+    throw err;
+  }
+}
+
 async function startSystem() {
   masterBot.launch().catch((err) => console.error('❌ Мастер-бот ошибка:', err.message));
   console.log('👑 Мастер-бот запущен.');
@@ -99,40 +115,45 @@ async function startSystem() {
     const clientBots = allBots.filter(b => b.token !== masterToken);
     console.log(`📡 Запуск ${clientBots.length} клиентских ботов из базы...`);
 
-    for (const botData of clientBots) {
+    const launchPromises = clientBots.map(botData => {
       if (!runningBots.has(botData.id)) {
-        await launchSingleBot(botData);
+        return launchSingleBot(botData);
       }
-    }
+      return Promise.resolve();
+    });
+
+    const results = await Promise.allSettled(launchPromises);
+    
+    const successful = results.filter(r => r.status === 'fulfilled').length;
+    console.log(`🚀 Мульти-ботовая система инициализирована. Успешно: ${successful}/${clientBots.length}`);
+
+    // Health Check
+    setInterval(healthCheckBots, 5 * 60 * 1000);
   } catch (err) {
     console.error('❌ Критическая ошибка БД при старте системы:', err);
   }
 }
 
-startSystem().then(() => console.log('🚀 Мульти-ботовая система инициализирована.'));
-
-process.once('SIGINT', () => process.exit(0));
-process.once('SIGTERM', () => process.exit(0));
-
-export const runningBots = new Map<number, Telegraf<MyContext>>();
-
-export async function launchSingleBot(botData: any) {
-  try {
-    const bot = new Telegraf<MyContext>(botData.token);
-    setupBotLogic(bot, botData.id);
-    await bot.launch();
-    runningBots.set(botData.id, bot);
-    console.log(`✅ Новый бот запущен: ID ${botData.id}`);
-  } catch (err) {
-    console.error(`❌ Ошибка запуска бота ID ${botData.id}:`, err);
+async function healthCheckBots() {
+  console.log('🩺 Запуск Health Check...');
+  for (const [id, botData] of runningBots.entries()) {
+    try {
+      if (botData.status === 'online') {
+        await botData.instance.telegram.getMe(); 
+      }
+    } catch (e) {
+      console.error(`⚠️ Бот ID ${id} отвалился. Пытаемся перезапустить...`);
+      botData.status = 'error';
+      // Logic of auto refresh here soon
+    }
   }
 }
 
 export async function stopBot(botId: number) {
-  const bot = runningBots.get(botId);
-  if (bot) {
+  const botData = runningBots.get(botId);
+  if (botData) {
     try {
-      await bot.stop('uninstalled');
+      botData.instance.stop('uninstalled');
       runningBots.delete(botId);
       console.log(`🛑 Бот с ID ${botId} успешно остановлен.`);
     } catch (err) {
@@ -140,3 +161,17 @@ export async function stopBot(botId: number) {
     }
   }
 }
+
+startSystem();
+
+const shutdown = () => {
+  console.log('Остановка всех ботов...');
+  masterBot.stop('SIGINT');
+  for (const [id, botData] of runningBots.entries()) {
+    botData.instance.stop('SIGINT');
+  }
+  process.exit(0);
+};
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
