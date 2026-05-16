@@ -93,14 +93,14 @@ export async function getFreeSlots(
       }
     }
 
-    const otherEvent = scheduledEvents.find(e => {
+    const otherEvent = scheduledEvents.find((e: any) => {
       if (!e.startTime) return false;
       const eventStart = timeToMinutes(e.startTime);
       const eventEnd = eventStart + e.durationMinutes;
       return isOverlapping(slotStart, slotEnd, eventStart, eventEnd);
     });
 
-    const overlappingApps = appointments.filter(app => {
+    const overlappingApps = appointments.filter((app: any) => {
       const appStart = timeToMinutes(app.startTime);
       const appEnd = timeToMinutes(app.endTime);
       return isOverlapping(slotStart, slotEnd, appStart, appEnd);
