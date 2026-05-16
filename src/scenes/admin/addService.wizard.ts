@@ -10,20 +10,18 @@ interface AddServiceState {
   maxCapacity?: number;
   eventDate?: string;
   startTime?: string;
+  address?: string;
 }
 
 const step1 = new Composer<MyContext>();
 step1.on('text', async (ctx) => {
   (ctx.wizard.state as AddServiceState).name = ctx.message.text;
-  await ctx.reply(
-    'Выберите тип:',
-    Markup.inlineKeyboard([
-      [Markup.button.callback('💆 Услуга (1 на 1)', 'type_SERVICE')],
-      [Markup.button.callback('🎓 Курс', 'type_COURSE')],
-      [Markup.button.callback('👥 Тренинг', 'type_TRAINING')],
-      [Markup.button.callback('🛠 Мастер-класс', 'type_WORKSHOP')],
-    ])
-  );
+  await ctx.reply('Выберите тип:', Markup.inlineKeyboard([
+    [Markup.button.callback('💆 Услуга (1 на 1)', 'type_SERVICE')],
+    [Markup.button.callback('🎓 Курс', 'type_COURSE')],
+    [Markup.button.callback('👥 Тренинг', 'type_TRAINING')],
+    [Markup.button.callback('🛠 Мастер-класс', 'type_WORKSHOP')]
+  ]));
   return ctx.wizard.next();
 });
 
@@ -53,8 +51,8 @@ step4.on('text', async (ctx) => {
 
   if (state.type !== 'SERVICE') {
     const prompt = state.type === 'COURSE' ? 'дату старта курса' : 'дату проведения';
-    await ctx.reply(`Введите ${prompt} (ГГГГ-ММ-ДД, например 2024-12-31):`);
-    return ctx.wizard.next();
+    await ctx.reply(`Введите ${prompt} (ГГГГ-ММ-ДД, например 2026-12-31):`);
+    return ctx.wizard.next(); 
   }
 
   state.maxCapacity = 1;
@@ -65,7 +63,7 @@ step4.on('text', async (ctx) => {
 const step5 = new Composer<MyContext>();
 step5.on('text', async (ctx) => {
   const dateStr = ctx.message.text.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return ctx.reply('Формат: ГГГГ-ММ-ДД (например 2024-05-20)');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return ctx.reply('Формат: ГГГГ-ММ-ДД');
   (ctx.wizard.state as AddServiceState).eventDate = dateStr;
   await ctx.reply('Введите время начала (ЧЧ:ММ, например 08:00):');
   return ctx.wizard.next();
@@ -77,44 +75,48 @@ step6.on('text', async (ctx) => {
   const input = ctx.message.text.trim();
 
   if (!state.startTime) {
-    const timeRegex = /^([01]?\d|2[0-3]):([0-5]\d)$/;
-    if (!timeRegex.test(input)) {
-      return ctx.reply('❌ Формат: ЧЧ:ММ (например 08:00 или 18:30)');
-    }
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (!timeRegexRegex.test(input)) return ctx.reply('Формат: ЧЧ:ММ (например 08:00)');
     state.startTime = input;
-    return await ctx.reply('Введите вместимость (кол-во мест):');
+    return await ctx.reply('Введите адрес проведения мероприятия/МК:');
   }
 
-  const capacity = parseInt(input);
-  if (isNaN(capacity) || capacity <= 0) return ctx.reply('Введите число > 0');
-  state.maxCapacity = capacity;
-  await showSummary(ctx);
+  state.address = input;
+  await ctx.reply('Введите вместимость (кол-во мест):');
   return ctx.wizard.next();
 });
 
 const step7 = new Composer<MyContext>();
-step7.action('confirm_create', async (ctx) => {
+step7.on('text', async (ctx) => {
+  const capacity = parseInt(ctx.message.text);
+  if (isNaN(capacity) || capacity <= 0) return ctx.reply('Введите целое число больше 0');
+  
+  (ctx.wizard.state as AddServiceState).maxCapacity = capacity;
+  await showSummary(ctx);
+  return ctx.wizard.next();
+});
+
+const step8 = new Composer<MyContext>();
+step8.action('confirm_create', async (ctx) => {
   await ctx.answerCbQuery();
   const state = ctx.wizard.state as AddServiceState;
   try {
     await adminService.createService(
-      ctx.botId,
-      state.name!,
-      state.duration!,
-      state.price!,
-      state.type,
-      state.maxCapacity,
-      state.eventDate ? new Date(state.eventDate) : undefined,
-      state.startTime
+      ctx.botId, state.name!, state.duration!, state.price!, 
+      state.type, state.maxCapacity, 
+      state.eventDate ? new Date(state.eventDate) : undefined, 
+      state.startTime,
+      state.address
     );
     await ctx.editMessageText('✅ Успешно сохранено!');
-  } catch (e) {
-    await ctx.editMessageText('❌ Ошибка сохранения.');
+  } catch (e) { 
+    console.error(e);
+    await ctx.editMessageText('❌ Ошибка сохранения.'); 
   }
   return ctx.scene.enter('admin_menu');
 });
 
-step7.action('cancel_create', async (ctx) => {
+step8.action('cancel_create', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.editMessageText('Отменено.');
   return ctx.scene.enter('admin_menu');
@@ -124,14 +126,16 @@ async function showSummary(ctx: MyContext) {
   const state = ctx.wizard.state as AddServiceState;
   const typeMap = { SERVICE: 'Услуга', COURSE: 'Курс', TRAINING: 'Тренинг', WORKSHOP: 'Мастер-класс' };
   let summary = `📝 *Итог:*\n\n🔹 *Название:* ${state.name}\n🔹 *Тип:* ${typeMap[state.type!]}\n⏳ *Длит.:* ${state.duration} мин\n💰 *Цена:* ${state.price} ₽\n👥 *Мест:* ${state.maxCapacity}`;
-  if (state.eventDate) summary += `\n📅 *Дата:* ${state.eventDate}\n⏰ *Время:* ${state.startTime}`;
+  if (state.eventDate) {
+    summary += `\n📅 *Дата:* ${state.eventDate}\n⏰ *Время:* ${state.startTime}\n📍 *Адрес:* ${state.address || 'Не указан'}`;
+  }
 
   await ctx.reply(summary, {
     parse_mode: 'Markdown',
     ...Markup.inlineKeyboard([
       [Markup.button.callback('✅ Подтвердить', 'confirm_create')],
-      [Markup.button.callback('❌ Отмена', 'cancel_create')],
-    ]),
+      [Markup.button.callback('❌ Отмена', 'cancel_create')]
+    ])
   });
 }
 
@@ -139,15 +143,9 @@ export const addServiceWizard = new Scenes.WizardScene<MyContext>(
   'add_service_wizard',
   async (ctx) => {
     const state = ctx.wizard.state as any;
-    Object.keys(state).forEach((key) => delete state[key]);
+    Object.keys(state).forEach(key => delete state[key]);
     await ctx.reply('Введите название:');
     return ctx.wizard.next();
   },
-  step1,
-  step2,
-  step3,
-  step4,
-  step5,
-  step6,
-  step7
+  step1, step2, step3, step4, step5, step6, step7, step8
 );
