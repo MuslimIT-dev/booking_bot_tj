@@ -69,18 +69,21 @@ step1.action(/^service_(\d+)$/, async (ctx) => {
       ctx.scene.session.time = service.startTime || '00:00';
 
       const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
-      if (!employees || !employees.length) {
-        await ctx.reply('К сожалению, организатор еще не назначен.');
+      if (!employees.length) {
+        await ctx.reply('К сожалению, организатор не назначен.');
         return ctx.scene.leave();
       }
-      ctx.scene.session.employeeId = employees[0].id; // ✅ Исправлено: берем первый элемент [0]
+
+      ctx.scene.session.employeeId = employees[0].id;
 
       await ctx.reply(
-        `✅ Вы выбрали: ${service.name}\n📅 Дата: ${ctx.scene.session.date}\n⏰ Время: ${ctx.scene.session.time}\n\nПожалуйста, отправьте ваш номер телефона (нажмите кнопку ниже):`,
-        Markup.keyboard([[Markup.button.contactRequest('📱 Отправить контакт')]]).oneTime().resize()
+        `✅ Вы выбрали: ${service.name}\n📅 Дата: ${ctx.scene.session.date}\n⏰ Время: ${ctx.scene.session.time}\n\nОтправьте номер телефона:`,
+        Markup.keyboard([
+          [Markup.button.contactRequest('📱 Отправить контакт')]
+        ]).oneTime().resize()
       );
-      
-      return ctx.wizard.selectStep(5); 
+
+      return ctx.wizard.next(); // ❗ ВАЖНО: НЕ selectStep
     }
 
     const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
@@ -170,9 +173,13 @@ step4.action(/^time_(.+)$/, async (ctx) => {
 });
 
 step4.on('text', async (ctx) => {
-  if (!isEventType(ctx.scene.session.serviceType)) {
-    await ctx.reply('Пожалуйста, выберите время, нажав на одну из кнопок выше 👆');
+  const type = ctx.scene.session.serviceType;
+
+  if (type === 'WORKSHOP' || type === 'COURSE') {
+    return ctx.reply('Отправьте контакт через кнопку 👇');
   }
+
+  return ctx.reply('Выберите время кнопкой выше 👆');
 });
 
 /**
@@ -180,47 +187,43 @@ step4.on('text', async (ctx) => {
  */
 const step5 = new Composer<MyContext>();
 step5.on(['message', 'contact'], async (ctx) => {
-  try {
-    const msg = ctx.message as any;
-    const phone = msg.contact?.phone_number || msg.text;
+  const phone = (ctx.message as any).contact?.phone_number || (ctx.message as any).text;
 
-    if (!phone || phone.length < 7) {
-      return ctx.reply('Пожалуйста, введите корректный номер телефона.');
-    }
+  if (!phone || phone.length < 7) {
+    return ctx.reply('Введите корректный номер телефона');
+  }
 
-    ctx.scene.session.contact = phone;
-    
-    // Безопасно ищем услугу
-    const service = await prisma.service.findUnique({ where: { id: ctx.scene.session.serviceId } });
-    if (!service) {
-      await ctx.reply('❌ Произошла ошибка: выбранная услуга не найдена в системе.');
-      return ctx.scene.leave();
-    }
+  ctx.scene.session.contact = phone;
 
-    let msgText = `📝 *Информация о записи:*\n` +
-                  `🔹 *Тип:* ${getServiceTypeName(service.type || 'SERVICE')}\n` +
-                  `🔹 *Название:* ${service.name}\n` +
-                  `📅 *Дата:* ${ctx.scene.session.date}\n` +
-                  `⏰ *Время:* ${ctx.scene.session.time}`;
+  const service = await prisma.service.findUnique({
+    where: { id: ctx.scene.session.serviceId }
+  });
 
-    if (service.address) {
-      msgText += `\n📍 *Адрес проведения:* _${service.address}_`;
-    }
-
-    await ctx.reply('Проверьте данные:', Markup.removeKeyboard());
-    await ctx.reply(msgText, {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Подтвердить', 'confirm'), Markup.button.callback('❌ Отмена', 'cancel')]
-      ])
-    });
-    return ctx.wizard.next();
-  } catch (error: any) {
-    // 🔥 Если что-то упадет — мы увидим лог в чате, а не просто зависание
-    console.error('Критическая ошибка на шаге 5:', error);
-    await ctx.reply(`⚠️ Произошла внутренняя ошибка системы бронирования: ${error.message}`);
+  if (!service) {
+    await ctx.reply('Услуга не найдена');
     return ctx.scene.leave();
   }
+
+  const isWorkshop = service.type === 'WORKSHOP';
+
+  const msgText =
+    `📝 *Информация о записи:*\n` +
+    `🔹 *Тип:* ${getServiceTypeName(service.type)}\n` +
+    `🔹 *Название:* ${service.name}\n` +
+    (ctx.scene.session.date ? `📅 *Дата:* ${ctx.scene.session.date}\n` : '') +
+    (ctx.scene.session.time ? `⏰ *Время:* ${ctx.scene.session.time}` : '');
+
+  await ctx.reply('Проверьте данные:', Markup.removeKeyboard());
+
+  await ctx.reply(msgText, {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('✅ Подтвердить', 'confirm')],
+      [Markup.button.callback('❌ Отмена', 'cancel')]
+    ])
+  });
+
+  return ctx.wizard.next();
 });
 
 /**
