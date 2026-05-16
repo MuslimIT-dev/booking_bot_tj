@@ -6,7 +6,7 @@ export const manageEmployeesScene = new Scenes.BaseScene<MyContext>('manage_empl
 
 manageEmployeesScene.enter(async (ctx) => {
   const employees = await adminService.getAllEmployees(ctx.botId);
-  const buttons = employees.map(e => [Markup.button.callback(`👤 ${e.name}`, `emp_${e.id}`)]);
+  const buttons = employees.map((e: any) => [Markup.button.callback(`👤 ${e.name}`, `emp_${e.id}`)]);
 
   buttons.push([Markup.button.callback('➕ Добавить сотрудника', 'create_employee')]);
   buttons.push([Markup.button.callback('🔙 Назад', 'back_to_menu')]);
@@ -26,7 +26,8 @@ manageEmployeesScene.action('back_to_menu', (ctx) => ctx.scene.enter('admin_menu
 manageEmployeesScene.action('create_employee', (ctx) => ctx.scene.enter('add_employee_wizard'));
 
 manageEmployeesScene.action(/^emp_(\d+)$/, async (ctx) => {
-  const id = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  const id = Number(match);
   ctx.scene.session.employeeId = id;
 
   const emp = await adminService.getEmployeeById(ctx.botId, id);
@@ -36,7 +37,7 @@ manageEmployeesScene.action(/^emp_(\d+)$/, async (ctx) => {
     return ctx.scene.reenter();
   }
 
-  const servicesText = emp.employeeServices.map(es => es.service.name).join(', ') || 'Нет услуг';
+  const servicesText = emp.employeeServices.map((es: any) => es.service.name).join(', ') || 'Нет услуг';
   const text = `👤 *Сотрудник:* ${emp.name}\n🔹 *Услуги:* ${servicesText}`;
   const buttons = [
     [Markup.button.callback('✏️ Изменить имя', 'edit_name')],
