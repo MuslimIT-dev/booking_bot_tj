@@ -83,7 +83,7 @@ step1.action(/^service_(\d+)$/, async (ctx) => {
         ]).oneTime().resize()
       );
 
-      return ctx.wizard.next(); // ❗ ВАЖНО: НЕ selectStep
+      return ctx.wizard.selectStep(6); 
     }
 
     const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
@@ -188,7 +188,7 @@ step4.on('text', async (ctx) => {
  * STEP 5 — Ввод контакта и подтверждение данных (Сюда прыгают МК)
  */
 const step5 = new Composer<MyContext>();
-step5.on(['message', 'contact'], async (ctx) => {
+step5.on('message', async (ctx) => {
   const phone = (ctx.message as any).contact?.phone_number || (ctx.message as any).text;
 
   if (!phone || phone.length < 7) {
