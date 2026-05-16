@@ -1,10 +1,11 @@
 import { Telegraf, session, Markup, Scenes } from 'telegraf';
 import * as dotenv from 'dotenv';
+import express from 'express';
 import { MyContext } from './types';
 import { stage } from './scenes';
 import { isAdmin } from './middleware/auth';
 import { bookingService } from './services/booking.service';
-import { adminService } from './services/admin.service';
+import { adminService } from './services/admin.service'; 
 import { prisma } from './db/client';
 import { masterManagerScene, registerBotWizard, changeAdminWizard } from './scenes/admin/masterManager.scene';
 
@@ -38,10 +39,7 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
   bot.hears('ℹ️ О нас', async (ctx: MyContext) => {
     try {
       const currentInfo = await adminService.getBotInfo(ctx.botId);
-    
-      await ctx.reply(`ℹ️ *О нашей компании:*\n\n${currentInfo}`, {
-        parse_mode: 'Markdown'
-      });
+      await ctx.reply(`ℹ️ *О нашей компании:*\n\n${currentInfo}`, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error(error);
       await ctx.reply('⚠️ Не удалось загрузить информацию о компании.');
@@ -50,7 +48,6 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
 
   bot.hears('📋 Мои записи', async (ctx: MyContext) => {
     if (!ctx.from) return;
-    
     try {
       const apps = await bookingService.getClientAppointments(ctx.botId, ctx.from.id);
       const activeApps = apps.filter(a => a.status === 'PENDING');
@@ -60,7 +57,6 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
       }
       
       await ctx.reply('📋 *Ваши активные записи:*', { parse_mode: 'Markdown' });
-      
       for (const a of activeApps) {
         let msg = `📅 *Дата:* ${a.appointmentDate.toLocaleDateString('ru-RU')}\n` +
                   `⏰ *Время:* ${a.startTime}\n` +
@@ -125,6 +121,52 @@ export async function launchSingleBot(botData: any) {
   }
 }
 
+const server = express();
+server.use(express.json());
+
+server.post('/api/payments/callback', async (req: express.Request, res: express.Response) => {
+  const { order_id, status } = req.body; 
+
+  if (status !== 'paid') {
+    return res.status(200).send('OK');
+  }
+
+  try {
+    const invoice = await prisma.invoice.findUnique({ where: { id: order_id } });
+    if (!invoice || invoice.status === 'PAID') {
+      return res.status(404).send('Счет не найден или уже оплачен');
+    }
+
+    await prisma.invoice.update({
+      where: { id: order_id },
+      data: { status: 'PAID' }
+    });
+
+    await bookingService.createAppointment(invoice.botId, {
+      telegramId: Number(invoice.telegramId),
+      serviceId: invoice.serviceId,
+      employeeId: invoice.employeeId,
+      date: invoice.date,
+      time: invoice.time,
+      contact: invoice.contact
+    });
+
+    const botData = runningBots.get(invoice.botId);
+    if (botData) {
+      await botData.instance.telegram.sendMessage(
+        Number(invoice.telegramId),
+        `✅ *Оплата успешно получена!*\n\nВы добавлены в список участников события. Детали можно посмотреть в «📋 Мои записи».`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    return res.status(200).send('SUCCESS');
+  } catch (error) {
+    console.error('Ошибка Webhook Платежа:', error);
+    return res.status(500).send('ERROR');
+  }
+});
+
 async function startSystem() {
   masterBot.launch().catch((err) => console.error('❌ Мастер-бот ошибка:', err.message));
   console.log('👑 Мастер-бот запущен.');
@@ -132,37 +174,31 @@ async function startSystem() {
   try {
     const allBots = await prisma.bot.findMany();
     const masterToken = process.env.MASTER_BOT_TOKEN;
-
     const clientBots = allBots.filter(b => b.token !== masterToken);
+    
     console.log(`📡 Запуск ${clientBots.length} клиентских ботов из базы...`);
-
     const launchPromises = clientBots.map(botData => {
-      if (!runningBots.has(botData.id)) {
-        return launchSingleBot(botData);
-      }
+      if (!runningBots.has(botData.id)) return launchSingleBot(botData);
       return Promise.resolve();
     });
 
-    const results = await Promise.allSettled(launchPromises);
-    
-    const successful = results.filter(r => r.status === 'fulfilled').length;
-    console.log(`🚀 Мульти-ботовая система инициализирована. Успешно: ${successful}/${clientBots.length}`);
+    await Promise.allSettled(launchPromises);
+    console.log(`🚀 Мульти-ботовая система инициализирована.`);
+
+    const PORT = process.env.PORT || 3000;
+    server.listen(PORT, () => console.log(`🌍 Express сервер платежей слушает порт: ${PORT}`));
 
     setInterval(healthCheckBots, 5 * 60 * 1000);
   } catch (err) {
-    console.error('❌ Критическая ошибка БД при старте системы:', err);
+    console.error('❌ Критическая ошибка при старте системы:', err);
   }
 }
 
 async function healthCheckBots() {
-  console.log('🩺 Запуск Health Check...');
   for (const [id, botData] of runningBots.entries()) {
     try {
-      if (botData.status === 'online') {
-        await botData.instance.telegram.getMe(); 
-      }
+      if (botData.status === 'online') await botData.instance.telegram.getMe(); 
     } catch (e) {
-      console.error(`⚠️ Бот ID ${id} отвалился. Пытаемся перезапустить...`);
       botData.status = 'error';
     }
   }
@@ -174,21 +210,15 @@ export async function stopBot(botId: number) {
     try {
       botData.instance.stop('uninstalled');
       runningBots.delete(botId);
-      console.log(`🛑 Бот с ID ${botId} успешно остановлен.`);
-    } catch (err) {
-      console.error(`Ошибка при остановке бота ${botId}:`, err);
-    }
+    } catch (err) { console.error(err); }
   }
 }
 
 startSystem();
 
 const shutdown = () => {
-  console.log('Остановка всех ботов...');
   masterBot.stop('SIGINT');
-  for (const [id, botData] of runningBots.entries()) {
-    botData.instance.stop('SIGINT');
-  }
+  for (const [id, botData] of runningBots.entries()) botData.instance.stop('SIGINT');
   process.exit(0);
 };
 
