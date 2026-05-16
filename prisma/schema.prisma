@@ -36,25 +36,6 @@ model Invoice {
   
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
-}
-
-model Invoice {
-  id              String          @id @default(uuid()) // Уникальный ID счета (отправляем в банк)
-  botId           Int
-  bot             Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
-  
-  telegramId      BigInt
-  serviceId       Int
-  employeeId      Int
-  date            String
-  time            String
-  contact         String
-  amount          Decimal         @db.Decimal(10, 2)
-  provider        PaymentProvider
-  status          InvoiceStatus   @default(PENDING)
-  
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
   invoices Invoice[]
 }
 
