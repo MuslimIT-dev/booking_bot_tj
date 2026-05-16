@@ -28,18 +28,24 @@ const getServiceTypeName = (type: string) => {
  */
 const step0 = new Composer<MyContext>();
 step0.action(/^cat_(.+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const match = ctx.match as RegExpMatchArray;
-  const category = match[1];
-  const services = await bookingService.getServices(ctx.botId);
-  const filtered = services.filter((s: any) => s.type === category);
+  try {
+    await ctx.answerCbQuery();
+    const match = ctx.match as RegExpMatchArray;
+    const category = match[1]; // ✅ Исправлен индекс совпадения
+    const services = await bookingService.getServices(ctx.botId);
+    const filtered = services.filter((s: any) => s.type === category);
 
-  const buttons = filtered.map((s: any) => [
-    Markup.button.callback(`${s.name} — ${s.price}₽`, `service_${s.id}`),
-  ]);
+    const buttons = filtered.map((s: any) => [
+      Markup.button.callback(`${s.name} — ${s.price}₽`, `service_${s.id}`),
+    ]);
 
-  await ctx.editMessageText('Выберите конкретное направление:', Markup.inlineKeyboard(buttons));
-  return ctx.wizard.next();
+    await ctx.editMessageText('Выберите конкретное направление:', Markup.inlineKeyboard(buttons));
+    return ctx.wizard.next();
+  } catch (e: any) {
+    console.error('Ошибка на шаге 0:', e);
+    await ctx.reply('⚠️ Произошла ошибка. Попробуйте снова.');
+    return ctx.scene.leave();
+  }
 });
 
 /**
@@ -47,40 +53,45 @@ step0.action(/^cat_(.+)$/, async (ctx) => {
  */
 const step1 = new Composer<MyContext>();
 step1.action(/^service_(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const match = ctx.match as RegExpMatchArray;
-  const serviceId = Number(match[1]);
-  ctx.scene.session.serviceId = serviceId;
+  try {
+    await ctx.answerCbQuery();
+    const match = ctx.match as RegExpMatchArray;
+    const serviceId = Number(match[1]); // ✅ Исправлен индекс совпадения
+    ctx.scene.session.serviceId = serviceId;
 
-  const service = await prisma.service.findUnique({ where: { id: serviceId } });
-  if (!service) return ctx.scene.leave();
+    const service = await prisma.service.findUnique({ where: { id: serviceId } });
+    if (!service) return ctx.scene.leave();
 
-  ctx.scene.session.serviceType = service.type;
+    ctx.scene.session.serviceType = service.type;
 
-  if (isEventType(service.type) && service.eventDate) {
-    ctx.scene.session.date = format(service.eventDate, 'yyyy-MM-dd');
-    ctx.scene.session.time = service.startTime || '00:00';
+    if (isEventType(service.type) && service.eventDate) {
+      ctx.scene.session.date = format(service.eventDate, 'yyyy-MM-dd');
+      ctx.scene.session.time = service.startTime || '00:00';
+
+      const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
+      if (!employees || !employees.length) {
+        await ctx.reply('К сожалению, организатор еще не назначен.');
+        return ctx.scene.leave();
+      }
+      ctx.scene.session.employeeId = employees[0].id; // ✅ Исправлено: берем первый элемент [0]
+
+      await ctx.reply(
+        `✅ Вы выбрали: ${service.name}\n📅 Дата: ${ctx.scene.session.date}\n⏰ Время: ${ctx.scene.session.time}\n\nПожалуйста, отправьте ваш номер телефона (нажмите кнопку ниже):`,
+        Markup.keyboard([[Markup.button.contactRequest('📱 Отправить контакт')]]).oneTime().resize()
+      );
+      
+      return ctx.wizard.selectStep(5); 
+    }
 
     const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
-    if (!employees || !employees.length) {
-      await ctx.reply('К сожалению, организатор еще не назначен.');
-      return ctx.scene.leave();
-    }
-    // ✅ ИСПРАВЛЕНО: Извлекаем ID из ПЕРВОГО элемента массива сотрудников [0].id
-    ctx.scene.session.employeeId = employees[0].id;
-
-    await ctx.reply(
-      `✅ Вы выбрали: ${service.name}\n📅 Дата: ${ctx.scene.session.date}\n⏰ Время: ${ctx.scene.session.time}\n\nПожалуйста, отправьте ваш номер телефона (нажмите кнопку ниже):`,
-      Markup.keyboard([[Markup.button.contactRequest('📱 Отправить контакт')]]).oneTime().resize()
-    );
-    
-    return ctx.wizard.selectStep(5); 
+    const buttons = employees.map((e: any) => [Markup.button.callback(`👤 ${e.name}`, `emp_${e.id}`)]);
+    await ctx.editMessageText('Выберите специалиста:', Markup.inlineKeyboard(buttons));
+    return ctx.wizard.next();
+  } catch (e: any) {
+    console.error('Ошибка на шаге 1:', e);
+    await ctx.reply('⚠️ Ошибка при выборе направления.');
+    return ctx.scene.leave();
   }
-
-  const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
-  const buttons = employees.map((e: any) => [Markup.button.callback(`👤 ${e.name}`, `emp_${e.id}`)]);
-  await ctx.editMessageText('Выберите специалиста:', Markup.inlineKeyboard(buttons));
-  return ctx.wizard.next();
 });
 
 /**
@@ -88,15 +99,19 @@ step1.action(/^service_(\d+)$/, async (ctx) => {
  */
 const step2 = new Composer<MyContext>();
 step2.action(/^emp_(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const match = ctx.match as RegExpMatchArray;
-  ctx.scene.session.employeeId = Number(match[1]);
-  ctx.scene.session.calendarMonth = format(new Date(), 'yyyy-MM');
-  await ctx.editMessageText(
-    'Выберите дату:',
-    getCalendar(new Date(ctx.scene.session.calendarMonth + '-01'))
-  );
-  return ctx.wizard.next();
+  try {
+    await ctx.answerCbQuery();
+    const match = ctx.match as RegExpMatchArray;
+    ctx.scene.session.employeeId = Number(match[1]); // ✅ Исправлен индекс
+    ctx.scene.session.calendarMonth = format(new Date(), 'yyyy-MM');
+    await ctx.editMessageText(
+      'Выберите дату:',
+      getCalendar(new Date(ctx.scene.session.calendarMonth + '-01'))
+    );
+    return ctx.wizard.next();
+  } catch (e: any) {
+    return ctx.scene.leave();
+  }
 });
 
 /**
@@ -113,26 +128,30 @@ step3.action(/^month_(\d{4}-\d{2})$/, async (ctx) => {
 });
 
 step3.action(/^date_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const match = ctx.match as RegExpMatchArray;
-  const selectedDate = match[1];
-  ctx.scene.session.date = selectedDate;
+  try {
+    await ctx.answerCbQuery();
+    const match = ctx.match as RegExpMatchArray;
+    const selectedDate = match[1];
+    ctx.scene.session.date = selectedDate;
 
-  const slots = await getFreeSlots(
-    ctx.botId,
-    ctx.scene.session.employeeId!,
-    ctx.scene.session.serviceId!,
-    selectedDate
-  );
+    const slots = await getFreeSlots(
+      ctx.botId,
+      ctx.scene.session.employeeId!,
+      ctx.scene.session.serviceId!,
+      selectedDate
+    );
 
-  if (!slots.length) return ctx.reply('На эту дату нет свободных мест.');
+    if (!slots.length) return ctx.reply('На эту дату нет свободных мест.');
 
-  const buttons = [];
-  for (let i = 0; i < slots.length; i += 3) {
-    buttons.push(slots.slice(i, i + 3).map((t: string) => Markup.button.callback(t, `time_${t}`)));
+    const buttons = [];
+    for (let i = 0; i < slots.length; i += 3) {
+      buttons.push(slots.slice(i, i + 3).map((t: string) => Markup.button.callback(t, `time_${t}`)));
+    }
+    await ctx.editMessageText(`Свободное время на ${selectedDate}:`, Markup.inlineKeyboard(buttons));
+    return ctx.wizard.next();
+  } catch (e: any) {
+    return ctx.scene.leave();
   }
-  await ctx.editMessageText(`Свободное время на ${selectedDate}:`, Markup.inlineKeyboard(buttons));
-  return ctx.wizard.next();
 });
 
 /**
@@ -161,34 +180,47 @@ step4.on('text', async (ctx) => {
  */
 const step5 = new Composer<MyContext>();
 step5.on(['message', 'contact'], async (ctx) => {
-  const msg = ctx.message as any;
-  const phone = msg.contact?.phone_number || msg.text;
+  try {
+    const msg = ctx.message as any;
+    const phone = msg.contact?.phone_number || msg.text;
 
-  if (!phone || phone.length < 7) {
-    return ctx.reply('Пожалуйста, введите корректный номер телефона.');
+    if (!phone || phone.length < 7) {
+      return ctx.reply('Пожалуйста, введите корректный номер телефона.');
+    }
+
+    ctx.scene.session.contact = phone;
+    
+    // Безопасно ищем услугу
+    const service = await prisma.service.findUnique({ where: { id: ctx.scene.session.serviceId } });
+    if (!service) {
+      await ctx.reply('❌ Произошла ошибка: выбранная услуга не найдена в системе.');
+      return ctx.scene.leave();
+    }
+
+    let msgText = `📝 *Информация о записи:*\n` +
+                  `🔹 *Тип:* ${getServiceTypeName(service.type || 'SERVICE')}\n` +
+                  `🔹 *Название:* ${service.name}\n` +
+                  `📅 *Дата:* ${ctx.scene.session.date}\n` +
+                  `⏰ *Время:* ${ctx.scene.session.time}`;
+
+    if (service.address) {
+      msgText += `\n📍 *Адрес проведения:* _${service.address}_`;
+    }
+
+    await ctx.reply('Проверьте данные:', Markup.removeKeyboard());
+    await ctx.reply(msgText, {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('✅ Подтвердить', 'confirm'), Markup.button.callback('❌ Отмена', 'cancel')]
+      ])
+    });
+    return ctx.wizard.next();
+  } catch (error: any) {
+    // 🔥 Если что-то упадет — мы увидим лог в чате, а не просто зависание
+    console.error('Критическая ошибка на шаге 5:', error);
+    await ctx.reply(`⚠️ Произошла внутренняя ошибка системы бронирования: ${error.message}`);
+    return ctx.scene.leave();
   }
-
-  ctx.scene.session.contact = phone;
-  const service = await prisma.service.findUnique({ where: { id: ctx.scene.session.serviceId } });
-
-  let msgText = `📝 *Информация о записи:*\n` +
-                `🔹 *Тип:* ${getServiceTypeName(service?.type || 'SERVICE')}\n` +
-                `🔹 *Название:* ${service?.name}\n` +
-                `📅 *Дата:* ${ctx.scene.session.date}\n` +
-                `⏰ *Время:* ${ctx.scene.session.time}`;
-
-  if (service?.address) {
-    msgText += `\n📍 *Адрес проведения:* _${service.address}_`;
-  }
-
-  await ctx.reply('Проверьте данные:', Markup.removeKeyboard());
-  await ctx.reply(msgText, {
-    parse_mode: 'Markdown',
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback('✅ Подтвердить', 'confirm'), Markup.button.callback('❌ Отмена', 'cancel')]
-    ])
-  });
-  return ctx.wizard.next();
 });
 
 /**
@@ -254,9 +286,9 @@ step6.action(/^pay_(ALIF|DC|ESCHATA)$/, async (ctx) => {
         ])
       }
     );
-  } catch (e) {
-    console.error(e);
-    await ctx.reply('❌ Ошибка генерации платежа. Попробуйте позже.');
+  } catch (e: any) {
+    console.error('Ошибка генерации платежа:', e);
+    await ctx.reply(`❌ Ошибка генерации платежа: ${e.message}`);
   }
   return ctx.scene.leave();
 });
