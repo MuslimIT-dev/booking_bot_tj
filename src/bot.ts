@@ -1,6 +1,6 @@
 import { Telegraf, session, Markup, Scenes } from 'telegraf';
 import * as dotenv from 'dotenv';
-import express from 'express';
+import express, { Request, Response } from 'express'; // ✅ Добавлены типы Request, Response
 import { MyContext } from './types';
 import { stage } from './scenes';
 import { isAdmin } from './middleware/auth';
@@ -50,7 +50,8 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
     if (!ctx.from) return;
     try {
       const apps = await bookingService.getClientAppointments(ctx.botId, ctx.from.id);
-      const activeApps = apps.filter(a => a.status === 'PENDING');
+      // ✅ Исправлено: явный тип для 'a'
+      const activeApps = apps.filter((a: any) => a.status === 'PENDING');
 
       if (activeApps.length === 0) {
         return await sendMainMenu(ctx, 'У вас пока нет активных записей.');
@@ -124,7 +125,8 @@ export async function launchSingleBot(botData: any) {
 const server = express();
 server.use(express.json());
 
-server.post('/api/payments/callback', async (req: express.Request, res: express.Response) => {
+// ✅ Исправлено: добавлены типы Request, Response
+server.post('/api/payments/callback', async (req: Request, res: Response) => {
   const { order_id, status } = req.body; 
 
   if (status !== 'paid') {
@@ -155,7 +157,7 @@ server.post('/api/payments/callback', async (req: express.Request, res: express.
     if (botData) {
       await botData.instance.telegram.sendMessage(
         Number(invoice.telegramId),
-        `✅ *Оплата успешно получена!*\n\nВы добавлены в список участников события. Детали можно посмотреть в «📋 Мои записи».`,
+        `✅ *Оплата успешно получена!*\n\nВы успешно записаны. Детали можно посмотреть в меню «📋 Мои записи».`,
         { parse_mode: 'Markdown' }
       );
     }
@@ -174,10 +176,12 @@ async function startSystem() {
   try {
     const allBots = await prisma.bot.findMany();
     const masterToken = process.env.MASTER_BOT_TOKEN;
-    const clientBots = allBots.filter(b => b.token !== masterToken);
+    // ✅ Исправлено: явный тип для 'b'
+    const clientBots = allBots.filter((b: any) => b.token !== masterToken);
     
     console.log(`📡 Запуск ${clientBots.length} клиентских ботов из базы...`);
-    const launchPromises = clientBots.map(botData => {
+    // ✅ Исправлено: явный тип для 'botData'
+    const launchPromises = clientBots.map((botData: any) => {
       if (!runningBots.has(botData.id)) return launchSingleBot(botData);
       return Promise.resolve();
     });
