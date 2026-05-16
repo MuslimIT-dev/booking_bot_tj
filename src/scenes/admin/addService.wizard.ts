@@ -10,7 +10,7 @@ interface AddServiceState {
   maxCapacity?: number;
   eventDate?: string;
   startTime?: string;
-  address?: string;
+  address?: string; 
 }
 
 const step1 = new Composer<MyContext>();
@@ -57,13 +57,13 @@ step4.on('text', async (ctx) => {
 
   state.maxCapacity = 1;
   await showSummary(ctx);
-  return ctx.wizard.selectStep(7);
+  return ctx.wizard.selectStep(7); 
 });
 
 const step5 = new Composer<MyContext>();
 step5.on('text', async (ctx) => {
   const dateStr = ctx.message.text.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return ctx.reply('Формат: ГГГГ-ММ-ДД');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return ctx.reply('Формат: ГГГГ-ММ-ДД (например 2026-05-20)');
   (ctx.wizard.state as AddServiceState).eventDate = dateStr;
   await ctx.reply('Введите время начала (ЧЧ:ММ, например 08:00):');
   return ctx.wizard.next();
@@ -71,33 +71,34 @@ step5.on('text', async (ctx) => {
 
 const step6 = new Composer<MyContext>();
 step6.on('text', async (ctx) => {
-  const state = ctx.wizard.state as AddServiceState;
   const input = ctx.message.text.trim();
-
-  if (!state.startTime) {
-    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-    if (!timeRegex.test(input)) return ctx.reply('Формат: ЧЧ:ММ (например 08:00)');
-    state.startTime = input;
-    return await ctx.reply('Введите адрес проведения мероприятия/МК:');
-  }
-
-  state.address = input;
-  await ctx.reply('Введите вместимость (кол-во мест):');
+  const timeRegex = /^([01]\d|2[0-3]|[^0]\d?):([0-5]\d)$/;
+  if (!timeRegex.test(input)) return ctx.reply('Формат: ЧЧ:ММ (например 08:00)');
+  
+  (ctx.wizard.state as AddServiceState).startTime = input;
+  await ctx.reply('Введите адрес проведения мероприятия (МК/Тренинга/Курса):');
   return ctx.wizard.next();
 });
 
 const step7 = new Composer<MyContext>();
 step7.on('text', async (ctx) => {
+  (ctx.wizard.state as AddServiceState).address = ctx.message.text.trim();
+  await ctx.reply('Введите максимальную вместимость (кол-во мест, например 15):');
+  return ctx.wizard.next();
+});
+
+const step8 = new Composer<MyContext>();
+step8.on('text', async (ctx) => {
   const capacity = parseInt(ctx.message.text);
-  if (isNaN(capacity) || capacity <= 0) return ctx.reply('Введите целое число больше 0');
+  if (isNaN(capacity) || capacity <= 0) return ctx.reply('Введите целое число больше 0:');
   
   (ctx.wizard.state as AddServiceState).maxCapacity = capacity;
   await showSummary(ctx);
   return ctx.wizard.next();
 });
 
-const step8 = new Composer<MyContext>();
-step8.action('confirm_create', async (ctx) => {
+const step9 = new Composer<MyContext>();
+step9.action('confirm_create', async (ctx) => {
   await ctx.answerCbQuery();
   const state = ctx.wizard.state as AddServiceState;
   try {
@@ -116,7 +117,7 @@ step8.action('confirm_create', async (ctx) => {
   return ctx.scene.enter('admin_menu');
 });
 
-step8.action('cancel_create', async (ctx) => {
+step9.action('cancel_create', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.editMessageText('Отменено.');
   return ctx.scene.enter('admin_menu');
@@ -147,5 +148,5 @@ export const addServiceWizard = new Scenes.WizardScene<MyContext>(
     await ctx.reply('Введите название:');
     return ctx.wizard.next();
   },
-  step1, step2, step3, step4, step5, step6, step7, step8
+  step1, step2, step3, step4, step5, step6, step7, step8, step9
 );
