@@ -29,9 +29,11 @@ step0.action(/^cat_(.+)$/, async (ctx) => {
   const match = ctx.match as RegExpMatchArray;
   const category = match[1];
   const services = await bookingService.getServices(ctx.botId);
-  const filtered = services.filter((s) => s.type === category);
+  // ✅ Tyрed Parameter 's'
+  const filtered = services.filter((s: any) => s.type === category);
 
-  const buttons = filtered.map((s) => [
+  // ✅ Tyрed Parameter 's'
+  const buttons = filtered.map((s: any) => [
     Markup.button.callback(`${s.name} — ${s.price}₽`, `service_${s.id}`),
   ]);
 
@@ -71,7 +73,8 @@ step1.action(/^service_(\d+)$/, async (ctx) => {
   }
 
   const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
-  const buttons = employees.map((e) => [Markup.button.callback(`👤 ${e.name}`, `emp_${e.id}`)]);
+  // ✅ Tyрed Parameter 'e'
+  const buttons = employees.map((e: any) => [Markup.button.callback(`👤 ${e.name}`, `emp_${e.id}`)]);
   await ctx.editMessageText('Выберите специалиста:', Markup.inlineKeyboard(buttons));
   return ctx.wizard.next();
 });
@@ -116,7 +119,8 @@ step3.action(/^date_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
 
   const buttons = [];
   for (let i = 0; i < slots.length; i += 3) {
-    buttons.push(slots.slice(i, i + 3).map((t) => Markup.button.callback(t, `time_${t}`)));
+    // ✅ Tyрed Parameter 't'
+    buttons.push(slots.slice(i, i + 3).map((t: string) => Markup.button.callback(t, `time_${t}`)));
   }
   await ctx.editMessageText(`Свободное время на ${selectedDate}:`, Markup.inlineKeyboard(buttons));
   return ctx.wizard.next();
@@ -150,8 +154,10 @@ step5.on(['message', 'contact'], async (ctx) => {
   ctx.scene.session.contact = phone;
   const service = await prisma.service.findUnique({ where: { id: ctx.scene.session.serviceId } });
 
+  const typeNames: any = { SERVICE: 'Услуга', TRAINING: 'Тренинг', WORKSHOP: 'Мастер-класс', COURSE: 'Курс' };
+  
   let msgText = `📝 *Информация о записи:*\n` +
-                `🔹 *Тип:* ${getServiceTypeName(service?.type || 'SERVICE')}\n` +
+                `🔹 *Тип:* ${typeNames[service?.type || 'SERVICE']}\n` +
                 `🔹 *Название:* ${service?.name}\n` +
                 `📅 *Дата:* ${ctx.scene.session.date}\n` +
                 `⏰ *Время:* ${ctx.scene.session.time}`;
@@ -262,8 +268,9 @@ export const bookingWizard = new Scenes.WizardScene<MyContext>(
     ];
 
     const buttons = categories
-      .filter((c) => services.some((s) => s.type === c.id))
-      .map((c) => [Markup.button.callback(c.label, `cat_${c.id}`)]);
+      // ✅ Tyрed Parameter 'c' and 's'
+      .filter((c: any) => services.some((s: any) => s.type === c.id))
+      .map((c: any) => [Markup.button.callback(c.label, `cat_${c.id}`)]);
 
     if (!buttons.length) {
       await ctx.reply('К сожалению, активных записей нет.', mainButtons);
