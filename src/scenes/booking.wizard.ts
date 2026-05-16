@@ -2,6 +2,7 @@ import { Scenes, Composer, Markup } from 'telegraf';
 import { MyContext } from '../types';
 import { bookingService } from '../services/booking.service';
 import { getFreeSlots } from '../services/schedule.service';
+import { paymentService } from '../services/payment.service';
 import { generateCalendarKeyboard as getCalendar } from '../keyboards/calendar';
 import { format } from 'date-fns';
 import { prisma } from '../db/client';
@@ -12,10 +13,21 @@ const isEventType = (type?: string) => {
   return type && type !== 'SERVICE';
 };
 
+const getServiceTypeName = (type: string) => {
+  const types: Record<string, string> = {
+    'SERVICE': 'Услуга',
+    'TRAINING': 'Тренинг',
+    'WORKSHOP': 'Мастер-класс',
+    'COURSE': 'Курс'
+  };
+  return types[type] || 'Запись';
+};
+
 const step0 = new Composer<MyContext>();
 step0.action(/^cat_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery();
-  const category = ctx.match[1];
+  const match = ctx.match as RegExpMatchArray;
+  const category = match[1];
   const services = await bookingService.getServices(ctx.botId);
   const filtered = services.filter((s) => s.type === category);
 
@@ -30,7 +42,8 @@ step0.action(/^cat_(.+)$/, async (ctx) => {
 const step1 = new Composer<MyContext>();
 step1.action(/^service_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
-  const serviceId = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  const serviceId = Number(match[1]);
   ctx.scene.session.serviceId = serviceId;
 
   const service = await prisma.service.findUnique({ where: { id: serviceId } });
@@ -53,7 +66,8 @@ step1.action(/^service_(\d+)$/, async (ctx) => {
       `✅ Вы выбрали: ${service.name}\n📅 Дата: ${ctx.scene.session.date}\n⏰ Время: ${ctx.scene.session.time}\n\nПожалуйста, отправьте ваш номер телефона:`,
       Markup.keyboard([[Markup.button.contactRequest('📱 Отправить контакт')]]).oneTime().resize()
     );
-    return ctx.wizard.selectStep(6);
+    
+    return ctx.wizard.selectStep(5);
   }
 
   const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
@@ -65,7 +79,8 @@ step1.action(/^service_(\d+)$/, async (ctx) => {
 const step2 = new Composer<MyContext>();
 step2.action(/^emp_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
-  ctx.scene.session.employeeId = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  ctx.scene.session.employeeId = Number(match[1]);
   ctx.scene.session.calendarMonth = format(new Date(), 'yyyy-MM');
   await ctx.editMessageText(
     'Выберите дату:',
@@ -76,16 +91,18 @@ step2.action(/^emp_(\d+)$/, async (ctx) => {
 
 const step3 = new Composer<MyContext>();
 step3.action(/^month_(\d{4}-\d{2})$/, async (ctx) => {
-  ctx.scene.session.calendarMonth = ctx.match[1];
+  const match = ctx.match as RegExpMatchArray;
+  ctx.scene.session.calendarMonth = match[1];
   await ctx.editMessageReplyMarkup(
-    getCalendar(new Date(ctx.match[1] + '-01')).reply_markup
+    getCalendar(new Date(match[1] + '-01')).reply_markup
   );
   await ctx.answerCbQuery();
 });
 
 step3.action(/^date_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
   await ctx.answerCbQuery();
-  const selectedDate = ctx.match[1];
+  const match = ctx.match as RegExpMatchArray;
+  const selectedDate = match[1];
   ctx.scene.session.date = selectedDate;
 
   const slots = await getFreeSlots(
@@ -108,7 +125,8 @@ step3.action(/^date_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
 const step4 = new Composer<MyContext>();
 step4.action(/^time_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery();
-  ctx.scene.session.time = ctx.match[1];
+  const match = ctx.match as RegExpMatchArray;
+  ctx.scene.session.time = match[1];
   await ctx.reply(
     'Для завершения отправьте ваш номер телефона (нажмите кнопку):',
     Markup.keyboard([[Markup.button.contactRequest('📱 Отправить контакт')]]).oneTime().resize()
@@ -132,10 +150,8 @@ step5.on(['message', 'contact'], async (ctx) => {
   ctx.scene.session.contact = phone;
   const service = await prisma.service.findUnique({ where: { id: ctx.scene.session.serviceId } });
 
-  const typeNames: any = { SERVICE: 'Услуга', TRAINING: 'Тренинг', WORKSHOP: 'Мастер-класс', COURSE: 'Курс' };
-  
   let msgText = `📝 *Информация о записи:*\n` +
-                `🔹 *Тип:* ${typeNames[service?.type || 'SERVICE']}\n` +
+                `🔹 *Тип:* ${getServiceTypeName(service?.type || 'SERVICE')}\n` +
                 `🔹 *Название:* ${service?.name}\n` +
                 `📅 *Дата:* ${ctx.scene.session.date}\n` +
                 `⏰ *Время:* ${ctx.scene.session.time}`;
@@ -154,15 +170,10 @@ step5.on(['message', 'contact'], async (ctx) => {
   return ctx.wizard.next();
 });
 
-
-// Замените финальные шаги (step6/confirm) в вашем booking.wizard.ts на этот код:
-
 const step6 = new Composer<MyContext>();
 
-// Выбор платежной системы
 step6.action('confirm', async (ctx) => {
   await ctx.answerCbQuery();
-  
   await ctx.editMessageText('💳 *Выберите удобный способ оплаты:*', {
     parse_mode: 'Markdown',
     ...Markup.inlineKeyboard([
@@ -176,7 +187,8 @@ step6.action('confirm', async (ctx) => {
 
 step6.action(/^pay_(ALIF|DC|ESCHATA)$/, async (ctx) => {
   await ctx.answerCbQuery();
-  const provider = ctx.match[1] as 'ALIF' | 'DC' | 'ESCHATA';
+  const match = ctx.match as RegExpMatchArray;
+  const provider = match[1] as 'ALIF' | 'DC' | 'ESCHATA';
   const session = ctx.scene.session;
 
   try {
@@ -231,6 +243,11 @@ step6.action('cancel_pay', async (ctx) => {
   return ctx.scene.leave();
 });
 
+step6.action('cancel', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply('Запись отменена.', mainButtons);
+  return ctx.scene.leave();
+});
 
 export const bookingWizard = new Scenes.WizardScene<MyContext>(
   'booking_wizard',
