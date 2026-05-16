@@ -36,7 +36,6 @@ model Invoice {
   
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
-  invoices Invoice[]
 }
 
 model Bot {
@@ -53,6 +52,7 @@ model Bot {
   employeeServices  EmployeeService[]
   workSchedules     WorkSchedule[]
   scheduleExceptions ScheduleException[]
+  invoices Invoice[]
 }
 
 model User {
