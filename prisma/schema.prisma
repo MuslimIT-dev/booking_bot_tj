@@ -62,6 +62,7 @@ model Service {
   durationMinutes  Int
   type             ServiceType        @default(SERVICE)
   maxCapacity      Int                @default(1)
+  address          String?
   isActive         Boolean            @default(true)
   employeeServices EmployeeService[]
   appointments     Appointment[]
