@@ -9,7 +9,8 @@ async createService(
   type: string = 'SERVICE', 
   maxCapacity: number = 1,
   eventDate?: Date,
-  startTime?: string
+  startTime?: string,
+  address?: string
 ) {
   return prisma.service.create({ 
     data: { 
@@ -20,7 +21,8 @@ async createService(
       type: type as any, 
       maxCapacity,
       eventDate,
-      startTime
+      startTime,
+      address
     } 
   });
 },
