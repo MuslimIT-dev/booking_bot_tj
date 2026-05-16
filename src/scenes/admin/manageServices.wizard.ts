@@ -7,7 +7,7 @@ export const manageServicesScene = new Scenes.BaseScene<MyContext>('manage_servi
 manageServicesScene.enter(async (ctx) => {
   const services = await adminService.getAllServices(ctx.botId);
 
-  const buttons = services.map(s => [
+  const buttons = services.map((s: any) => [
     Markup.button.callback(`📦 ${s.name} (${s.price}₽)`, `view_service_${s.id}`)
   ]);
 
@@ -26,7 +26,8 @@ manageServicesScene.enter(async (ctx) => {
 });
 
 manageServicesScene.action(/^view_service_(\d+)$/, async (ctx) => {
-  const id = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  const id = Number(match);
   const service = await adminService.getServiceById(ctx.botId, id);
 
   if (!service) {
@@ -49,7 +50,8 @@ manageServicesScene.action(/^view_service_(\d+)$/, async (ctx) => {
 });
 
 manageServicesScene.action(/^confirm_delete_(\d+)$/, async (ctx) => {
-  const id = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  const id = Number(match);
 
   try {
     await adminService.deleteService(ctx.botId, id);
