@@ -11,12 +11,12 @@ const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 async function renderDaysKeyboard(ctx: MyContext) {
   const selected = ctx.scene.session.selectedDays || [];
-  const buttons = daysOfWeek.map(d =>
+  const buttons = daysOfWeek.map((d: any) =>
     Markup.button.callback(`${selected.includes(d.id) ? '✅' : '⬜️'} ${d.name}`, `toggle_day_${d.id}`)
   );
 
   const kb = [buttons.slice(0, 4), buttons.slice(4)];
-  if (selected.length > 0) kb.push([Markup.button.callback('➡️ Продолжить', 'next_step')]);
+  if (selected.length > 0) kb.push([Markup.button.callback('➡️ Continue', 'next_step')]);
 
   const text = 'Выберите дни недели для применения расписания (можно несколько):';
   if (ctx.callbackQuery) {
@@ -29,7 +29,8 @@ async function renderDaysKeyboard(ctx: MyContext) {
 const step1 = new Composer<MyContext>();
 step1.action(/^emp_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
-  ctx.scene.session.employeeId = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  ctx.scene.session.employeeId = Number(match[1]);
   ctx.scene.session.selectedDays = [];
 
   await renderDaysKeyboard(ctx);
@@ -38,7 +39,8 @@ step1.action(/^emp_(\d+)$/, async (ctx) => {
 
 const step2 = new Composer<MyContext>();
 step2.action(/^toggle_day_(\d+)$/, async (ctx) => {
-  const dayId = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  const dayId = Number(match[1]);
   const session = ctx.scene.session;
 
   if (!session.selectedDays) session.selectedDays = [];
@@ -125,7 +127,7 @@ export const addScheduleWizard = new Scenes.WizardScene<MyContext>(
       await ctx.reply('Сначала добавьте сотрудников.');
       return ctx.scene.enter('admin_menu');
     }
-    const buttons = employees.map(e => [Markup.button.callback(e.name, `emp_${e.id}`)]);
+    const buttons = employees.map((e: any) => [Markup.button.callback(e.name, `emp_${e.id}`)]);
     buttons.push([Markup.button.callback('Отмена', 'cancel')]);
 
     await ctx.reply('Выберите сотрудника:', Markup.inlineKeyboard(buttons));
