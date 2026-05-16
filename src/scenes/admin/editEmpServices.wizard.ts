@@ -8,7 +8,7 @@ async function renderServicesKeyboard(ctx: MyContext) {
   const allServices = await adminService.getAllServices(ctx.botId);
   const selected = ctx.scene.session.selectedServices || [];
 
-  const buttons = allServices.map(s => {
+  const buttons = allServices.map((s: any) => {
     const isSelected = selected.includes(s.id);
     return [Markup.button.callback(`${isSelected ? '✅ ' : ''}${s.name}`, `toggle_s_${s.id}`)];
   });
@@ -25,7 +25,8 @@ async function renderServicesKeyboard(ctx: MyContext) {
 }
 
 step1.action(/^toggle_s_(\d+)$/, async (ctx) => {
-  const serviceId = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  const serviceId = Number(match[1]);
   if (!ctx.scene.session.selectedServices) ctx.scene.session.selectedServices = [];
 
   const selected = ctx.scene.session.selectedServices;
@@ -68,7 +69,7 @@ export const editEmpServicesWizard = new Scenes.WizardScene<MyContext>(
     ctx.scene.session.employeeId = employeeId;
 
     const emp = await adminService.getEmployeeById(ctx.botId, employeeId);
-    ctx.scene.session.selectedServices = emp?.employeeServices.map(es => es.serviceId) || [];
+    ctx.scene.session.selectedServices = emp?.employeeServices.map((es: any) => es.serviceId) || [];
 
     await renderServicesKeyboard(ctx);
     return ctx.wizard.next();
