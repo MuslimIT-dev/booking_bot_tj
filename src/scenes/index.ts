@@ -11,6 +11,7 @@ import { editEmpNameWizard } from './admin/editEmpName.wizard';
 import { editEmpServicesWizard } from './admin/editEmpServices.wizard';
 import { manageServicesScene } from './admin/manageServices.wizard';
 import { addServiceWizard } from './admin/addService.wizard';
+import { editInfoWizard } from './admin/editInfo.wizard';
 
 export const stage = new Scenes.Stage<MyContext>([
   bookingWizard,
@@ -22,5 +23,6 @@ export const stage = new Scenes.Stage<MyContext>([
   editEmpNameWizard,
   editEmpServicesWizard,
   manageServicesScene,
-  addServiceWizard
+  addServiceWizard,
+  editInfoWizard
 ]);
