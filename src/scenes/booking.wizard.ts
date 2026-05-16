@@ -132,20 +132,28 @@ step5.on(['message', 'contact'], async (ctx) => {
   ctx.scene.session.contact = phone;
   const service = await prisma.service.findUnique({ where: { id: ctx.scene.session.serviceId } });
 
-  const typeNames: any = { SERVICE: 'Услуга', TRAINING: 'Тренинг', WORKSHOP: 'МК', COURSE: 'Курс' };
+  const typeNames: any = { SERVICE: 'Услуга', TRAINING: 'Тренинг', WORKSHOP: 'Мастер-класс', COURSE: 'Курс' };
+  
+  let msgText = `📝 *Информация о записи:*\n` +
+                `🔹 *Тип:* ${typeNames[service?.type || 'SERVICE']}\n` +
+                `🔹 *Название:* ${service?.name}\n` +
+                `📅 *Дата:* ${ctx.scene.session.date}\n` +
+                `⏰ *Время:* ${ctx.scene.session.time}`;
+
+  if (service?.address) {
+    msgText += `\n📍 *Адрес проведения:* _${service.address}_`;
+  }
 
   await ctx.reply('Проверьте данные:', Markup.removeKeyboard());
-  await ctx.reply(
-    `📝 *Инфо:*\n🔹 *Тип:* ${typeNames[service?.type || 'SERVICE']}\n🔹 *Название:* ${service?.name}\n📅 *Дата:* ${ctx.scene.session.date}\n⏰ *Время:* ${ctx.scene.session.time}`,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Подтвердить', 'confirm'), Markup.button.callback('❌ Отмена', 'cancel')],
-      ]),
-    }
-  );
+  await ctx.reply(msgText, {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('✅ Подтвердить', 'confirm'), Markup.button.callback('❌ Отмена', 'cancel')]
+    ])
+  });
   return ctx.wizard.next();
 });
+
 
 const step6 = new Composer<MyContext>();
 step6.action('confirm', async (ctx) => {
