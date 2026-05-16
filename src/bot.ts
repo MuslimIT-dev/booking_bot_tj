@@ -31,35 +31,38 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
   bot.hears('📅 Записаться', (ctx) => ctx.scene.enter('booking_wizard'));
 
   bot.hears('📋 Мои записи', async (ctx: MyContext) => {
-    try {
-      if (!ctx.from?.id) return;
+  if (!ctx.from) return;
+  
+  try {
+    const apps = await bookingService.getClientAppointments(ctx.botId, ctx.from.id);
+    const activeApps = apps.filter(a => a.status === 'PENDING');
 
-      console.log(`Ищем записи для BotID: ${ctx.botId}, TG ID: ${ctx.from.id}`);
-
-      const apps = await bookingService.getClientAppointments(ctx.botId, ctx.from.id);
-      const activeApps = apps.filter((a) => a.status === 'PENDING' || a.status === 'CONFIRMED');
-
-      if (activeApps.length === 0) {
-        return await ctx.reply('У вас пока нет активных записей.');
-      }
-
-      await ctx.reply('📋 *Ваши активные записи:*', { parse_mode: 'Markdown' });
-
-      for (const a of activeApps) {
-        const msg = `📅 *Дата:* ${a.appointmentDate.toLocaleDateString('ru-RU')}\n⏰ *Время:* ${a.startTime}\n🔹 *Услуга:* ${a.service.name}\n👤 *Мастер:* ${a.employee.name}`;
-
-        await ctx.reply(msg, {
-          parse_mode: 'Markdown',
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback('❌ Отменить запись', `cancel_app_${a.id}`)],
-          ]),
-        });
-      }
-    } catch (error) {
-      console.error('Ошибка при получении записей:', error);
-      await ctx.reply('⚠️ Не удалось загрузить ваши записи.');
+    if (activeApps.length === 0) {
+      return await sendMainMenu(ctx, 'У вас пока нет активных записей.');
     }
-  });
+    
+    await ctx.reply('📋 *Ваши активные записи:*', { parse_mode: 'Markdown' });
+    
+    for (const a of activeApps) {
+      let msg = `📅 *Дата:* ${a.appointmentDate.toLocaleDateString('ru-RU')}\n` +
+                `⏰ *Время:* ${a.startTime}\n` +
+                `🔹 *Направление:* ${a.service.name}\n` +
+                `👤 *Специалист:* ${a.employee.name}`;
+
+      if (a.service.address) {
+        msg += `\n📍 *Адрес проведения:* _${a.service.address}_`;
+      }
+
+      await ctx.reply(msg, {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отменить запись', `cancel_app_${a.id}`)]])
+      });
+    }
+  } catch (error) {
+    console.error(error);
+    await ctx.reply('⚠️ Ошибка при загрузке списка записей.');
+  }
+});
 
   bot.command('admin', isAdmin, (ctx) => ctx.scene.enter('admin_menu'));
 
