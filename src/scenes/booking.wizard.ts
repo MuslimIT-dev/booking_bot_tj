@@ -231,85 +231,101 @@ step5.on('message', async (ctx) => {
 /**
  * STEP 6 — Выбор кошелька (Alif, DC, Eschata)
  */
+/**
+ * STEP 6 — Вывод личных реквизитов админа
+ */
 const step6 = new Composer<MyContext>();
 
-step6.on('message', async (ctx) => {
-  await ctx.reply('Нажмите кнопку "Подтвердить" 👇');
-});
-
 step6.action('confirm', async (ctx) => {
-  await ctx.answerCbQuery();
+  try {
+    await ctx.answerCbQuery();
+    const session = ctx.scene.session;
+    const service = await prisma.service.findUnique({ where: { id: session.serviceId } });
+    if (!service) return ctx.scene.leave();
 
-  await ctx.reply(
-    '💳 Выберите способ оплаты:',
-    Markup.inlineKeyboard([
-      [Markup.button.callback('alif_mobi 🔸', 'pay_ALIF')],
-      [Markup.button.callback('DC Wallet 💳', 'pay_DC')],
-      [Markup.button.callback('Эсхата Онлайн 🔹', 'pay_ESCHATA')],
-      [Markup.button.callback('❌ Отмена', 'cancel_pay')]
-    ])
-  );
-});
+    // ✅ ТЕКСТ С ТВОИМИ ЛИЧНЫМИ РЕКВИЗИТАМИ (БЕЗ МЕРЧАНТА)
+    const text = `💳 *Реквизиты для оплаты:*\n\n` +
+                 `💰 *Сумма к переводу:* ${service.price} TJS\n` +
+                 `📱 *Кошелек (Alif/DC/Хумо):* \`+992000000000\`\n` +
+                 `👤 *Получатель:* Имя Фамилия (Админ)\n\n` +
+                 `👉 Пожалуйста, сделайте перевод по номеру и **отправьте скриншот чека** (как фото) прямо сюда для подтверждения записи.`;
 
-step6.action(/^pay_(ALIF|DC|ESCHATA)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-
-  const provider = (ctx.match as RegExpMatchArray)[1] as any;
-  const session = ctx.scene.session;
-
-  const service = await prisma.service.findUnique({
-    where: { id: session.serviceId }
-  });
-
-  if (!service?.price) {
-    await ctx.reply('Ошибка стоимости услуги.');
+    await ctx.editMessageText(text, { parse_mode: 'Markdown' });
+    return ctx.wizard.next(); // Ждем скриншот на следующем шаге
+  } catch (e) {
     return ctx.scene.leave();
   }
-
-  const invoice = await prisma.invoice.create({
-    data: {
-      botId: ctx.botId,
-      telegramId: BigInt(ctx.from!.id),
-      serviceId: session.serviceId!,
-      employeeId: session.employeeId!,
-      date: session.date!,
-      time: session.time!,
-      contact: session.contact!,
-      amount: service.price,
-      provider
-    }
-  });
-
-  const paymentData = await paymentService.generateInvoice(
-    provider,
-    invoice.id,
-    Number(service.price),
-    `Оплата услуги: ${service.name}`
-  );
-
-  await ctx.deleteMessage().catch(() => {});
-
-  await ctx.reply(
-    `💸 Счёт создан!\n\n💰 ${service.price} TJS`,
-    Markup.inlineKeyboard([
-      [Markup.button.url('📱 Оплатить', paymentData.url)],
-      [Markup.button.callback('❌ Отмена', 'cancel_pay')]
-    ])
-  );
-
-  return ctx.scene.leave();
 });
 
 step6.action('cancel', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('Запись отменена', mainButtons);
+  await ctx.reply('Запись отменена.', mainButtons);
   return ctx.scene.leave();
 });
 
-step6.action('cancel_pay', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.reply('Запись отменена', mainButtons);
-  return ctx.scene.leave();
+/**
+ * STEP 7 — Прием скриншота, создание PENDING записи и отправка ownerId бота
+ */
+const step7 = new Composer<MyContext>();
+step7.on(['photo', 'document'], async (ctx) => {
+  try {
+    const session = ctx.scene.session;
+    const photo = ctx.message && (ctx.message as any).photo;
+    
+    if (!photo) {
+      return ctx.reply('⚠️ Пожалуйста, отправьте квитанцию/скриншот оплаты в виде изображения (фото):');
+    }
+
+    const fileId = photo[photo.length - 1].file_id; 
+    const service = await prisma.service.findUnique({ where: { id: session.serviceId } });
+
+    // Создаем или обновляем клиента в этом боте
+    const user = await prisma.user.upsert({
+      where: { telegramId_botId: { telegramId: BigInt(ctx.from!.id), botId: ctx.botId } },
+      update: { phone: session.contact },
+      create: { telegramId: BigInt(ctx.from!.id), botId: ctx.botId, phone: session.contact, firstName: ctx.from!.first_name }
+    });
+
+    // ✅ ЗАПИСЬ СО СТАТУСОМ PENDING (БЛОКИРОВАНА)
+    const appointment = await prisma.appointment.create({
+      data: {
+        botId: ctx.botId,
+        clientUserId: user.id,
+        serviceId: session.serviceId!,
+        employeeId: session.employeeId!,
+        appointmentDate: new Date(session.date!),
+        startTime: session.time!,
+        endTime: session.time!, 
+        clientContact: session.contact!,
+        status: 'PENDING' 
+      }
+    });
+
+    await ctx.reply('⏳ *Ваш чек отправлен на проверку администратору.*\nКак только платеж будет подтвержден, место забронируется автоматически и вы получите сообщение!', { parse_mode: 'Markdown', ...mainButtons });
+
+    // ✅ ПЕРЕСЫЛКА ЧЕКА ВЛАДЕЛЬЦУ БОТА ДЛЯ РУЧНОЙ ПРОВЕРКИ ИНЛАЙН-КНОПКАМИ
+    const botRecord = await prisma.bot.findUnique({ where: { id: ctx.botId } });
+    if (botRecord) {
+      const adminButtons = Markup.inlineKeyboard([
+        [Markup.button.callback('✅ Одобрить запись', `approve_app_${appointment.id}`)],
+        [Markup.button.callback('❌ Отклонить чек', `reject_app_${appointment.id}`)]
+      ]);
+
+      await ctx.telegram.sendPhoto(Number(botRecord.ownerId), fileId, {
+        caption: `🔔 *Новая заявка на бронирование (Ожидает проверки чека):*\n\n` +
+                 `👤 *Клиент:* ${session.contact}\n` +
+                 `📦 *Направление:* ${service?.name}\n` +
+                 `💰 *Сумма:* ${service?.price} TJS\n` +
+                 `📅 *Дата/Время:* ${session.date} в ${session.time}`,
+        parse_mode: 'Markdown',
+        ...adminButtons
+      });
+    }
+    return ctx.scene.leave();
+  } catch (error: any) {
+    await ctx.reply(`❌ Ошибка сохранения заявки: ${error.message}`);
+    return ctx.scene.leave();
+  }
 });
 
 export const bookingWizard = new Scenes.WizardScene<MyContext>(
@@ -345,5 +361,6 @@ export const bookingWizard = new Scenes.WizardScene<MyContext>(
   step3,
   step4,
   step5,
-  step6
+  step6,
+  step7
 );
