@@ -4,6 +4,7 @@ import { MyContext } from './types';
 import { stage } from './scenes';
 import { isAdmin } from './middleware/auth';
 import { bookingService } from './services/booking.service';
+import { adminService } from './services/admin.service';
 import { prisma } from './db/client';
 import { masterManagerScene, registerBotWizard, changeAdminWizard } from './scenes/admin/masterManager.scene';
 
@@ -23,11 +24,15 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
   const sendMainMenu = async (ctx: MyContext, text: string) => {
     return await ctx.reply(text, {
       parse_mode: 'Markdown',
-      ...Markup.keyboard([['📅 Записаться'], ['📋 Мои записи'], ['ℹ️ О нас']]).resize(),
+      ...Markup.keyboard([
+        ['📅 Записаться', '📋 Мои записи'],
+        ['ℹ️ О нас']
+      ]).resize(),
     });
   };
 
-  bot.start(async (ctx) => await sendMainMenu(ctx, 'Добро пожаловать!'));
+  bot.start(async (ctx) => await sendMainMenu(ctx, 'Добро пожаловать! Выберите интересующий вас пункт меню:'));
+  
   bot.hears('📅 Записаться', (ctx) => ctx.scene.enter('booking_wizard'));
 
   bot.hears('ℹ️ О нас', async (ctx: MyContext) => {
@@ -44,38 +49,38 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
   });
 
   bot.hears('📋 Мои записи', async (ctx: MyContext) => {
-  if (!ctx.from) return;
-  
-  try {
-    const apps = await bookingService.getClientAppointments(ctx.botId, ctx.from.id);
-    const activeApps = apps.filter(a => a.status === 'PENDING');
-
-    if (activeApps.length === 0) {
-      return await sendMainMenu(ctx, 'У вас пока нет активных записей.');
-    }
+    if (!ctx.from) return;
     
-    await ctx.reply('📋 *Ваши активные записи:*', { parse_mode: 'Markdown' });
-    
-    for (const a of activeApps) {
-      let msg = `📅 *Дата:* ${a.appointmentDate.toLocaleDateString('ru-RU')}\n` +
-                `⏰ *Время:* ${a.startTime}\n` +
-                `🔹 *Направление:* ${a.service.name}\n` +
-                `👤 *Специалист:* ${a.employee.name}`;
+    try {
+      const apps = await bookingService.getClientAppointments(ctx.botId, ctx.from.id);
+      const activeApps = apps.filter(a => a.status === 'PENDING');
 
-      if (a.service.address) {
-        msg += `\n📍 *Адрес проведения:* _${a.service.address}_`;
+      if (activeApps.length === 0) {
+        return await sendMainMenu(ctx, 'У вас пока нет активных записей.');
       }
+      
+      await ctx.reply('📋 *Ваши активные записи:*', { parse_mode: 'Markdown' });
+      
+      for (const a of activeApps) {
+        let msg = `📅 *Дата:* ${a.appointmentDate.toLocaleDateString('ru-RU')}\n` +
+                  `⏰ *Время:* ${a.startTime}\n` +
+                  `🔹 *Направление:* ${a.service.name}\n` +
+                  `👤 *Специалист:* ${a.employee.name}`;
 
-      await ctx.reply(msg, {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отменить запись', `cancel_app_${a.id}`)]])
-      });
+        if (a.service.address) {
+          msg += `\n📍 *Адрес проведения:* _${a.service.address}_`;
+        }
+
+        await ctx.reply(msg, {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отменить запись', `cancel_app_${a.id}`)]])
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      await ctx.reply('⚠️ Ошибка при загрузке списка записей.');
     }
-  } catch (error) {
-    console.error(error);
-    await ctx.reply('⚠️ Ошибка при загрузке списка записей.');
-  }
-});
+  });
 
   bot.command('admin', isAdmin, (ctx) => ctx.scene.enter('admin_menu'));
 
@@ -143,7 +148,6 @@ async function startSystem() {
     const successful = results.filter(r => r.status === 'fulfilled').length;
     console.log(`🚀 Мульти-ботовая система инициализирована. Успешно: ${successful}/${clientBots.length}`);
 
-    // Health Check
     setInterval(healthCheckBots, 5 * 60 * 1000);
   } catch (err) {
     console.error('❌ Критическая ошибка БД при старте системы:', err);
@@ -160,7 +164,6 @@ async function healthCheckBots() {
     } catch (e) {
       console.error(`⚠️ Бот ID ${id} отвалился. Пытаемся перезапустить...`);
       botData.status = 'error';
-      // Logic of auto refresh here soon
     }
   }
 }
