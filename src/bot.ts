@@ -23,12 +23,25 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
   const sendMainMenu = async (ctx: MyContext, text: string) => {
     return await ctx.reply(text, {
       parse_mode: 'Markdown',
-      ...Markup.keyboard([['📅 Записаться'], ['📋 Мои записи']]).resize(),
+      ...Markup.keyboard([['📅 Записаться'], ['📋 Мои записи'], ['ℹ️ О нас']]).resize(),
     });
   };
 
   bot.start(async (ctx) => await sendMainMenu(ctx, 'Добро пожаловать!'));
   bot.hears('📅 Записаться', (ctx) => ctx.scene.enter('booking_wizard'));
+
+  bot.hears('ℹ️ О нас', async (ctx: MyContext) => {
+    try {
+      const currentInfo = await adminService.getBotInfo(ctx.botId);
+    
+      await ctx.reply(`ℹ️ *О нашей компании:*\n\n${currentInfo}`, {
+        parse_mode: 'Markdown'
+      });
+    } catch (error) {
+      console.error(error);
+      await ctx.reply('⚠️ Не удалось загрузить информацию о компании.');
+    }
+  });
 
   bot.hears('📋 Мои записи', async (ctx: MyContext) => {
   if (!ctx.from) return;
