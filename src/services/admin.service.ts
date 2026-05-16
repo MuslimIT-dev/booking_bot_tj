@@ -1,31 +1,32 @@
 import { prisma } from '../db/client';
 
 export const adminService = {
-async createService(
-  botId: number, 
-  name: string, 
-  durationMinutes: number, 
-  price: number, 
-  type: string = 'SERVICE', 
-  maxCapacity: number = 1,
-  eventDate?: Date,
-  startTime?: string,
-  address?: string
-) {
-  return prisma.service.create({ 
-    data: { 
-      botId, 
-      name, 
-      durationMinutes, 
-      price, 
-      type: type as any, 
-      maxCapacity,
-      eventDate,
-      startTime,
-      address
-    } 
-  });
-},
+  // --- SERVICES ---
+  async createService(
+    botId: number, 
+    name: string, 
+    durationMinutes: number, 
+    price: number, 
+    type: string = 'SERVICE', 
+    maxCapacity: number = 1,
+    eventDate?: Date,
+    startTime?: string,
+    address?: string
+  ) {
+    return prisma.service.create({ 
+      data: { 
+        botId, 
+        name, 
+        durationMinutes, 
+        price, 
+        type: type as any, 
+        maxCapacity,
+        eventDate,
+        startTime,
+        address
+      } 
+    });
+  },
 
   async getBotInfo(botId: number) {
     const bot = await prisma.bot.findUnique({
@@ -134,7 +135,7 @@ async createService(
     const bStart = breakStart || null;
     const bEnd = breakEnd || null;
 
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: any) => {
       await tx.workSchedule.deleteMany({
         where: {
           botId,
