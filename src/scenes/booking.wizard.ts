@@ -233,10 +233,14 @@ step5.on(['message', 'contact'], async (ctx) => {
  */
 const step6 = new Composer<MyContext>();
 
+step6.on('message', async (ctx) => {
+  await ctx.reply('Нажмите кнопку "Подтвердить" 👇');
+});
+
 step6.action('confirm', async (ctx) => {
   await ctx.answerCbQuery();
 
-  await ctx.editMessageText(
+  await ctx.reply(
     '💳 Выберите способ оплаты:',
     Markup.inlineKeyboard([
       [Markup.button.callback('alif_mobi 🔸', 'pay_ALIF')],
