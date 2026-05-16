@@ -40,7 +40,7 @@ async createService(
       where: { id: botId },
       data: { aboutText: text }
     });
-  }
+  },
 
   async getAllServices(botId: number) {
     return prisma.service.findMany({ 
