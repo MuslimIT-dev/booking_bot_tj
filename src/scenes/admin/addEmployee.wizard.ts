@@ -13,7 +13,7 @@ step1.on('text', async (ctx) => {
   }
 
   ctx.scene.session.selectedServices = [];
-  const keyboard = services.map(s => [Markup.button.callback(s.name, `select_${s.id}`)]);
+  const keyboard = services.map((s: any) => [Markup.button.callback(s.name, `select_${s.id}`)]);
   keyboard.push([Markup.button.callback('✅ Готово', 'done')]);
 
   await ctx.reply('Выберите услуги, которые оказывает сотрудник:', Markup.inlineKeyboard(keyboard));
@@ -22,7 +22,8 @@ step1.on('text', async (ctx) => {
 
 const step2 = new Composer<MyContext>();
 step2.action(/^select_(\d+)$/, async (ctx) => {
-  const id = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  const id = Number(match[1]);
   const session = ctx.scene.session;
 
   if (!session.selectedServices) session.selectedServices = [];
@@ -34,7 +35,7 @@ step2.action(/^select_(\d+)$/, async (ctx) => {
   }
 
   const services = await adminService.getAllServices(ctx.botId);
-  const keyboard = services.map(s => {
+  const keyboard = services.map((s: any) => {
     const isSelected = session.selectedServices?.includes(s.id);
     return [Markup.button.callback(`${isSelected ? '✅ ' : ''}${s.name}`, `select_${s.id}`)];
   });
