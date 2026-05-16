@@ -27,7 +27,7 @@ manageEmployeesScene.action('create_employee', (ctx) => ctx.scene.enter('add_emp
 
 manageEmployeesScene.action(/^emp_(\d+)$/, async (ctx) => {
   const match = ctx.match as RegExpMatchArray;
-  const id = Number(match);
+  const id = Number(match[1]);
   ctx.scene.session.employeeId = id;
 
   const emp = await adminService.getEmployeeById(ctx.botId, id);
