@@ -62,10 +62,11 @@ step1.action(/^service_(\d+)$/, async (ctx) => {
     ctx.scene.session.time = service.startTime || '00:00';
 
     const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
-    if (!employees.length) {
+    if (!employees || !employees.length) {
       await ctx.reply('К сожалению, организатор еще не назначен.');
       return ctx.scene.leave();
     }
+    // ✅ ИСПРАВЛЕНО: Извлекаем ID из ПЕРВОГО элемента массива сотрудников [0].id
     ctx.scene.session.employeeId = employees[0].id;
 
     await ctx.reply(
@@ -73,7 +74,7 @@ step1.action(/^service_(\d+)$/, async (ctx) => {
       Markup.keyboard([[Markup.button.contactRequest('📱 Отправить контакт')]]).oneTime().resize()
     );
     
-    return ctx.wizard.selectStep(5); // Идем строго на шаг телефона (индекс 5)
+    return ctx.wizard.selectStep(5); 
   }
 
   const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
@@ -149,7 +150,6 @@ step4.action(/^time_(.+)$/, async (ctx) => {
   return ctx.wizard.next();
 });
 
-// ✅ ИСПРАВЛЕНО: Текст обрабатывается только если это не МК/Курс, предотвращая ложное срабатывание предупреждения
 step4.on('text', async (ctx) => {
   if (!isEventType(ctx.scene.session.serviceType)) {
     await ctx.reply('Пожалуйста, выберите время, нажав на одну из кнопок выше 👆');
