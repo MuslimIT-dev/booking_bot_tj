@@ -16,7 +16,7 @@ viewAppointmentsScene.enter(async (ctx) => {
 
   let report = '📋 *Список последних записей:*\n\n';
   
-  apps.forEach((a, i) => {
+  apps.forEach((a: any, i: number) => {
     const dateStr = a.appointmentDate.toLocaleDateString('ru-RU');
     report += `${i + 1}. 📅 *${dateStr}* | ⏰ *${a.startTime}*\n`;
     report += `   🔹 *Услуга:* ${a.service.name}\n`;
