@@ -76,7 +76,7 @@ step6.on('text', async (ctx) => {
 
   if (!state.startTime) {
     const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-    if (!timeRegexRegex.test(input)) return ctx.reply('Формат: ЧЧ:ММ (например 08:00)');
+    if (!timeRegex.test(input)) return ctx.reply('Формат: ЧЧ:ММ (например 08:00)');
     state.startTime = input;
     return await ctx.reply('Введите адрес проведения мероприятия/МК:');
   }
