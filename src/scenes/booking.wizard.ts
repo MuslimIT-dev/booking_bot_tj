@@ -175,7 +175,9 @@ step4.action(/^time_(.+)$/, async (ctx) => {
 step4.on('text', async (ctx) => {
   const type = ctx.scene.session.serviceType;
 
-  if (type === 'WORKSHOP' || type === 'COURSE') {
+  if (type === 'SERVICE') return;
+
+  if (type === 'WORKSHOP') {
     return ctx.reply('Отправьте контакт через кнопку 👇');
   }
 
@@ -233,78 +235,76 @@ const step6 = new Composer<MyContext>();
 
 step6.action('confirm', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.editMessageText('💳 *Выберите удобный способ оплаты:*', {
-    parse_mode: 'Markdown',
-    ...Markup.inlineKeyboard([
+
+  await ctx.editMessageText(
+    '💳 Выберите способ оплаты:',
+    Markup.inlineKeyboard([
       [Markup.button.callback('alif_mobi 🔸', 'pay_ALIF')],
       [Markup.button.callback('DC Wallet 💳', 'pay_DC')],
       [Markup.button.callback('Эсхата Онлайн 🔹', 'pay_ESCHATA')],
       [Markup.button.callback('❌ Отмена', 'cancel_pay')]
     ])
-  });
+  );
 });
 
 step6.action(/^pay_(ALIF|DC|ESCHATA)$/, async (ctx) => {
   await ctx.answerCbQuery();
-  const match = ctx.match as RegExpMatchArray;
-  const provider = match[1] as 'ALIF' | 'DC' | 'ESCHATA';
+
+  const provider = (ctx.match as RegExpMatchArray)[1] as any;
   const session = ctx.scene.session;
 
-  try {
-    const service = await prisma.service.findUnique({ where: { id: session.serviceId } });
-    if (!service || !service.price) return ctx.reply('Ошибка стоимости услуги.');
+  const service = await prisma.service.findUnique({
+    where: { id: session.serviceId }
+  });
 
-    const invoice = await prisma.invoice.create({
-      data: {
-        botId: ctx.botId,
-        telegramId: BigInt(ctx.from!.id),
-        serviceId: session.serviceId!,
-        employeeId: session.employeeId!,
-        date: session.date!,
-        time: session.time!,
-        contact: session.contact!,
-        amount: service.price,
-        provider: provider
-      }
-    });
-
-    const paymentData = await paymentService.generateInvoice(
-      provider, 
-      invoice.id, 
-      Number(service.price), 
-      `Оплата услуги: ${service.name}`
-    );
-
-    await ctx.deleteMessage().catch(() => {});
-    
-    await ctx.reply(
-      `💸 *Счет на оплату сформирован!*\n\n` +
-      `🔹 *Сумма к оплате:* ${service.price} TJS\n` +
-      `⚠️ *Важно:* Ваше место забронируется автоматически **сразу после успешной оплаты** через приложение.`,
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [Markup.button.url('📱 Перейти к оплате', paymentData.url)],
-          [Markup.button.callback('❌ Отменить', 'cancel_pay')]
-        ])
-      }
-    );
-  } catch (e: any) {
-    console.error('Ошибка генерации платежа:', e);
-    await ctx.reply(`❌ Ошибка генерации платежа: ${e.message}`);
+  if (!service?.price) {
+    await ctx.reply('Ошибка стоимости услуги.');
+    return ctx.scene.leave();
   }
-  return ctx.scene.leave();
-});
 
-step6.action('cancel_pay', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.reply('Запись отменена.', mainButtons);
+  const invoice = await prisma.invoice.create({
+    data: {
+      botId: ctx.botId,
+      telegramId: BigInt(ctx.from!.id),
+      serviceId: session.serviceId!,
+      employeeId: session.employeeId!,
+      date: session.date!,
+      time: session.time!,
+      contact: session.contact!,
+      amount: service.price,
+      provider
+    }
+  });
+
+  const paymentData = await paymentService.generateInvoice(
+    provider,
+    invoice.id,
+    Number(service.price),
+    `Оплата услуги: ${service.name}`
+  );
+
+  await ctx.deleteMessage().catch(() => {});
+
+  await ctx.reply(
+    `💸 Счёт создан!\n\n💰 ${service.price} TJS`,
+    Markup.inlineKeyboard([
+      [Markup.button.url('📱 Оплатить', paymentData.url)],
+      [Markup.button.callback('❌ Отмена', 'cancel_pay')]
+    ])
+  );
+
   return ctx.scene.leave();
 });
 
 step6.action('cancel', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('Запись отменена.', mainButtons);
+  await ctx.reply('Запись отменена', mainButtons);
+  return ctx.scene.leave();
+});
+
+step6.action('cancel_pay', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply('Запись отменена', mainButtons);
   return ctx.scene.leave();
 });
 
