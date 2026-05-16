@@ -27,7 +27,7 @@ manageServicesScene.enter(async (ctx) => {
 
 manageServicesScene.action(/^view_service_(\d+)$/, async (ctx) => {
   const match = ctx.match as RegExpMatchArray;
-  const id = Number(match);
+  const id = Number(match[1]);
   const service = await adminService.getServiceById(ctx.botId, id);
 
   if (!service) {
@@ -51,7 +51,7 @@ manageServicesScene.action(/^view_service_(\d+)$/, async (ctx) => {
 
 manageServicesScene.action(/^confirm_delete_(\d+)$/, async (ctx) => {
   const match = ctx.match as RegExpMatchArray;
-  const id = Number(match);
+  const id = Number(match[1]);
 
   try {
     await adminService.deleteService(ctx.botId, id);
