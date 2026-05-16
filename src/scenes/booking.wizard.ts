@@ -23,16 +23,17 @@ const getServiceTypeName = (type: string) => {
   return types[type] || 'Запись';
 };
 
+/**
+ * STEP 0 — Категории
+ */
 const step0 = new Composer<MyContext>();
 step0.action(/^cat_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const match = ctx.match as RegExpMatchArray;
   const category = match[1];
   const services = await bookingService.getServices(ctx.botId);
-  // ✅ Tyрed Parameter 's'
   const filtered = services.filter((s: any) => s.type === category);
 
-  // ✅ Tyрed Parameter 's'
   const buttons = filtered.map((s: any) => [
     Markup.button.callback(`${s.name} — ${s.price}₽`, `service_${s.id}`),
   ]);
@@ -41,6 +42,9 @@ step0.action(/^cat_(.+)$/, async (ctx) => {
   return ctx.wizard.next();
 });
 
+/**
+ * STEP 1 — Выбор конкретной услуги
+ */
 const step1 = new Composer<MyContext>();
 step1.action(/^service_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
@@ -65,20 +69,22 @@ step1.action(/^service_(\d+)$/, async (ctx) => {
     ctx.scene.session.employeeId = employees[0].id;
 
     await ctx.reply(
-      `✅ Вы выбрали: ${service.name}\n📅 Дата: ${ctx.scene.session.date}\n⏰ Время: ${ctx.scene.session.time}\n\nПожалуйста, отправьте ваш номер телефона:`,
+      `✅ Вы выбрали: ${service.name}\n📅 Дата: ${ctx.scene.session.date}\n⏰ Время: ${ctx.scene.session.time}\n\nПожалуйста, отправьте ваш номер телефона (нажмите кнопку ниже):`,
       Markup.keyboard([[Markup.button.contactRequest('📱 Отправить контакт')]]).oneTime().resize()
     );
     
-    return ctx.wizard.selectStep(5);
+    return ctx.wizard.selectStep(5); // Идем строго на шаг телефона (индекс 5)
   }
 
   const employees = await bookingService.getEmployeesByService(ctx.botId, serviceId);
-  // ✅ Tyрed Parameter 'e'
   const buttons = employees.map((e: any) => [Markup.button.callback(`👤 ${e.name}`, `emp_${e.id}`)]);
   await ctx.editMessageText('Выберите специалиста:', Markup.inlineKeyboard(buttons));
   return ctx.wizard.next();
 });
 
+/**
+ * STEP 2 — Выбор сотрудника (для SERVICE)
+ */
 const step2 = new Composer<MyContext>();
 step2.action(/^emp_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
@@ -92,6 +98,9 @@ step2.action(/^emp_(\d+)$/, async (ctx) => {
   return ctx.wizard.next();
 });
 
+/**
+ * STEP 3 — Календарь
+ */
 const step3 = new Composer<MyContext>();
 step3.action(/^month_(\d{4}-\d{2})$/, async (ctx) => {
   const match = ctx.match as RegExpMatchArray;
@@ -119,13 +128,15 @@ step3.action(/^date_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
 
   const buttons = [];
   for (let i = 0; i < slots.length; i += 3) {
-    // ✅ Tyрed Parameter 't'
     buttons.push(slots.slice(i, i + 3).map((t: string) => Markup.button.callback(t, `time_${t}`)));
   }
   await ctx.editMessageText(`Свободное время на ${selectedDate}:`, Markup.inlineKeyboard(buttons));
   return ctx.wizard.next();
 });
 
+/**
+ * STEP 4 — Выбор времени (Только по инлайн кнопкам!)
+ */
 const step4 = new Composer<MyContext>();
 step4.action(/^time_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery();
@@ -138,10 +149,16 @@ step4.action(/^time_(.+)$/, async (ctx) => {
   return ctx.wizard.next();
 });
 
-step4.on('message', async (ctx) => {
-  await ctx.reply('Пожалуйста, выберите время, нажав на кнопку выше 👆');
+// ✅ ИСПРАВЛЕНО: Текст обрабатывается только если это не МК/Курс, предотвращая ложное срабатывание предупреждения
+step4.on('text', async (ctx) => {
+  if (!isEventType(ctx.scene.session.serviceType)) {
+    await ctx.reply('Пожалуйста, выберите время, нажав на одну из кнопок выше 👆');
+  }
 });
 
+/**
+ * STEP 5 — Ввод контакта и подтверждение данных (Сюда прыгают МК)
+ */
 const step5 = new Composer<MyContext>();
 step5.on(['message', 'contact'], async (ctx) => {
   const msg = ctx.message as any;
@@ -154,10 +171,8 @@ step5.on(['message', 'contact'], async (ctx) => {
   ctx.scene.session.contact = phone;
   const service = await prisma.service.findUnique({ where: { id: ctx.scene.session.serviceId } });
 
-  const typeNames: any = { SERVICE: 'Услуга', TRAINING: 'Тренинг', WORKSHOP: 'Мастер-класс', COURSE: 'Курс' };
-  
   let msgText = `📝 *Информация о записи:*\n` +
-                `🔹 *Тип:* ${typeNames[service?.type || 'SERVICE']}\n` +
+                `🔹 *Тип:* ${getServiceTypeName(service?.type || 'SERVICE')}\n` +
                 `🔹 *Название:* ${service?.name}\n` +
                 `📅 *Дата:* ${ctx.scene.session.date}\n` +
                 `⏰ *Время:* ${ctx.scene.session.time}`;
@@ -176,6 +191,9 @@ step5.on(['message', 'contact'], async (ctx) => {
   return ctx.wizard.next();
 });
 
+/**
+ * STEP 6 — Выбор кошелька (Alif, DC, Eschata)
+ */
 const step6 = new Composer<MyContext>();
 
 step6.action('confirm', async (ctx) => {
@@ -268,7 +286,6 @@ export const bookingWizard = new Scenes.WizardScene<MyContext>(
     ];
 
     const buttons = categories
-      // ✅ Tyрed Parameter 'c' and 's'
       .filter((c: any) => services.some((s: any) => s.type === c.id))
       .map((c: any) => [Markup.button.callback(c.label, `cat_${c.id}`)]);
 
