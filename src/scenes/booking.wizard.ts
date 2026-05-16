@@ -155,26 +155,82 @@ step5.on(['message', 'contact'], async (ctx) => {
 });
 
 
+// Замените финальные шаги (step6/confirm) в вашем booking.wizard.ts на этот код:
+
 const step6 = new Composer<MyContext>();
+
+// Выбор платежной системы
 step6.action('confirm', async (ctx) => {
   await ctx.answerCbQuery();
+  
+  await ctx.editMessageText('💳 *Выберите удобный способ оплаты:*', {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('alif_mobi 🔸', 'pay_ALIF')],
+      [Markup.button.callback('DC Wallet 💳', 'pay_DC')],
+      [Markup.button.callback('Эсхата Онлайн 🔹', 'pay_ESCHATA')],
+      [Markup.button.callback('❌ Отмена', 'cancel_pay')]
+    ])
+  });
+});
+
+step6.action(/^pay_(ALIF|DC|ESCHATA)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const provider = ctx.match[1] as 'ALIF' | 'DC' | 'ESCHATA';
+  const session = ctx.scene.session;
+
   try {
-    await bookingService.createAppointment(ctx.botId, {
-      telegramId: ctx.from!.id,
-      ...ctx.scene.session,
+    const service = await prisma.service.findUnique({ where: { id: session.serviceId } });
+    if (!service || !service.price) return ctx.reply('Ошибка стоимости услуги.');
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        botId: ctx.botId,
+        telegramId: BigInt(ctx.from!.id),
+        serviceId: session.serviceId!,
+        employeeId: session.employeeId!,
+        date: session.date!,
+        time: session.time!,
+        contact: session.contact!,
+        amount: service.price,
+        provider: provider
+      }
     });
-    await ctx.reply('✅ Вы успешно записаны! Ждем вас.', mainButtons);
-  } catch {
-    await ctx.reply('❌ Извините, места закончились или произошла ошибка.', mainButtons);
+
+    const paymentData = await paymentService.generateInvoice(
+      provider, 
+      invoice.id, 
+      Number(service.price), 
+      `Оплата услуги: ${service.name}`
+    );
+
+    await ctx.deleteMessage().catch(() => {});
+    
+    await ctx.reply(
+      `💸 *Счет на оплату сформирован!*\n\n` +
+      `🔹 *Сумма к оплате:* ${service.price} TJS\n` +
+      `⚠️ *Важно:* Ваше место забронируется автоматически **сразу после успешной оплаты** через приложение.`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.url('📱 Перейти к оплате', paymentData.url)],
+          [Markup.button.callback('❌ Отменить', 'cancel_pay')]
+        ])
+      }
+    );
+  } catch (e) {
+    console.error(e);
+    await ctx.reply('❌ Ошибка генерации платежа. Попробуйте позже.');
   }
   return ctx.scene.leave();
 });
 
-step6.action('cancel', async (ctx) => {
+step6.action('cancel_pay', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.reply('Запись отменена.', mainButtons);
   return ctx.scene.leave();
 });
+
 
 export const bookingWizard = new Scenes.WizardScene<MyContext>(
   'booking_wizard',
