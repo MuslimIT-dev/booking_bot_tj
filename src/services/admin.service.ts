@@ -27,6 +27,21 @@ async createService(
   });
 },
 
+  async getBotInfo(botId: number) {
+    const bot = await prisma.bot.findUnique({
+      where: { id: botId },
+      select: { aboutText: true }
+    });
+    return bot?.aboutText || "Информация о нас пока не заполнена.";
+  },
+
+  async updateBotInfo(botId: number, text: string) {
+    return prisma.bot.update({
+      where: { id: botId },
+      data: { aboutText: text }
+    });
+  }
+
   async getAllServices(botId: number) {
     return prisma.service.findMany({ 
       where: { botId, isActive: true }, 
