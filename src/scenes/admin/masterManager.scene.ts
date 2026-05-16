@@ -7,7 +7,7 @@ export const masterManagerScene = new Scenes.BaseScene<MyContext>('master_manage
 
 masterManagerScene.enter(async (ctx) => {
   const bots = await prisma.bot.findMany();
-  const buttons = bots.map(b => [
+  const buttons = bots.map((b: any) => [
     Markup.button.callback(`🤖 Бот ID: ${b.id} (${b.token.slice(-7)})`, `manage_bot_${b.id}`)
   ]);
 
@@ -20,7 +20,8 @@ masterManagerScene.enter(async (ctx) => {
 });
 
 masterManagerScene.action(/^manage_bot_(\d+)$/, async (ctx) => {
-  const botId = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  const botId = Number(match);
   const bot = await prisma.bot.findUnique({ where: { id: botId } });
   if (!bot) return ctx.answerCbQuery('Бот не найден');
 
@@ -35,7 +36,8 @@ masterManagerScene.action(/^manage_bot_(\d+)$/, async (ctx) => {
 });
 
 masterManagerScene.action(/^delete_bot_(\d+)$/, async (ctx) => {
-  const botId = Number(ctx.match[1]);
+  const match = ctx.match as RegExpMatchArray;
+  const botId = Number(match);
   try {
     await prisma.bot.delete({ where: { id: botId } });
     await stopBot(botId);
@@ -89,10 +91,10 @@ export const registerBotWizard = new Scenes.WizardScene<MyContext>(
       
       launchSingleBot(newBot)
         .then(() => {
-            ctx.reply(`🎉 Бот (ID: ${newBot.id}) успешно запущен и работает!`);
+            ctx.reply(`🎉 Бот (ID: ${newBot.id}) успешно запущен и работает!`).catch(() => {});
         })
-        .catch((err) => {
-            ctx.reply(`❌ Ошибка запуска бота (ID: ${newBot.id}). Токен верный? Ошибка: ${err.message}`);
+        .catch((err: any) => {
+            ctx.reply(`❌ Ошибка запуска бота (ID: ${newBot.id}). Ошибка: ${err.message}`).catch(() => {});
         });
     } catch (e) {
       await ctx.reply('❌ Ошибка БД при создании бота');
