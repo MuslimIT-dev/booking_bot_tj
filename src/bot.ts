@@ -1,6 +1,5 @@
 import { Telegraf, session, Markup, Scenes } from 'telegraf';
 import * as dotenv from 'dotenv';
-import express, { Request, Response } from 'express'; // ✅ Добавлены типы Request, Response
 import { MyContext } from './types';
 import { stage } from './scenes';
 import { isAdmin } from './middleware/auth';
@@ -50,8 +49,7 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
     if (!ctx.from) return;
     try {
       const apps = await bookingService.getClientAppointments(ctx.botId, ctx.from.id);
-      // ✅ Исправлено: явный тип для 'a'
-      const activeApps = apps.filter((a: any) => a.status === 'PENDING');
+      const activeApps = apps.filter((a: any) => a.status === 'PENDING' || a.status === 'CONFIRMED');
 
       if (activeApps.length === 0) {
         return await sendMainMenu(ctx, 'У вас пока нет активных записей.');
@@ -59,10 +57,12 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
       
       await ctx.reply('📋 *Ваши активные записи:*', { parse_mode: 'Markdown' });
       for (const a of activeApps) {
+        const statusText = a.status === 'PENDING' ? '⏳ Ожидает проверки чека' : '🟢 Подтверждена';
         let msg = `📅 *Дата:* ${a.appointmentDate.toLocaleDateString('ru-RU')}\n` +
                   `⏰ *Время:* ${a.startTime}\n` +
                   `🔹 *Направление:* ${a.service.name}\n` +
-                  `👤 *Специалист:* ${a.employee.name}`;
+                  `👤 *Специалист:* ${a.employee.name}\n` +
+                  `📊 *Статус:* _${statusText}_`;
 
         if (a.service.address) {
           msg += `\n📍 *Адрес проведения:* _${a.service.address}_`;
@@ -82,15 +82,77 @@ export function setupBotLogic(bot: Telegraf<MyContext>, botDbId: number) {
   bot.command('admin', isAdmin, (ctx) => ctx.scene.enter('admin_menu'));
 
   bot.action(/^cancel_app_(\d+)$/, async (ctx) => {
-    const appId = Number((ctx as any).match[1]);
+    const match = ctx.match as RegExpMatchArray;
+    const appId = Number(match[1]);
     await prisma.appointment.update({ where: { id: appId }, data: { status: 'CANCELLED' } });
     await ctx.answerCbQuery('Запись отменена');
     if (ctx.callbackQuery.message && 'text' in ctx.callbackQuery.message) {
       await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ ОТМЕНЕНО');
     }
   });
+
+  // ✅ ДОБАВЛЕНО: Обработчик кнопки Одобрить запись для Администратора компании
+  bot.action(/^approve_app_(\d+)$/, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray;
+    const appId = Number(match[1]);
+
+    try {
+      const app = await prisma.appointment.update({
+        where: { id: appId },
+        data: { status: 'CONFIRMED' },
+        include: { client: true, service: true }
+      });
+
+      await ctx.answerCbQuery('Запись успешно одобрена!');
+      
+      if (ctx.callbackQuery.message && 'caption' in ctx.callbackQuery.message) {
+        await ctx.editMessageCaption(ctx.callbackQuery.message.caption + '\n\n🟢 *ОДОБРЕНО (Баланс проверен)*');
+      }
+
+      // Отправляем уведомление клиенту в личку
+      await ctx.telegram.sendMessage(
+        Number(app.client.telegramId), 
+        `🎉 *Отличные новости!*\n\nАдминистратор проверил ваш платеж. Ваша запись на мероприятие *"${app.service.name}"* (${app.startTime}) успешно **ПОДТВЕРЖДЕНА**!`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (e: any) {
+      await ctx.answerCbQuery('Ошибка при подтверждении');
+    }
+  });
+
+  // ✅ ДОБАВЛЕНО: Обработчик кнопки Отклонить чек
+  bot.action(/^reject_app_(\d+)$/, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray;
+    const appId = Number(match[1]);
+
+    try {
+      const app = await prisma.appointment.update({
+        where: { id: appId },
+        data: { status: 'CANCELLED' },
+        include: { client: true, service: true }
+      });
+
+      await ctx.answerCbQuery('Чек отклонен.');
+
+      if (ctx.callbackQuery.message && 'caption' in ctx.callbackQuery.message) {
+        await ctx.editMessageCaption(ctx.callbackQuery.message.caption + '\n\n🔴 *ОТКЛОНЕНО (Перевод не найден)*');
+      }
+
+      // Уведомляем клиента об отказе
+      await ctx.telegram.sendMessage(
+        Number(app.client.telegramId),
+        `⚠️ *Внимание!*\n\nАдминистратор отклонил ваш чек на оплату курса/МК *"${app.service.name}"*. Если это ошибка, пожалуйста, свяжитесь с организатором.`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (e) {
+      await ctx.answerCbQuery('Ошибка при отклонении');
+    }
+  });
 }
 
+/**
+ * 3. МАСТЕР-БОТ
+ */
 const masterBot = new Telegraf<MyContext>(process.env.MASTER_BOT_TOKEN!);
 const GLOBAL_ADMIN_ID = Number(process.env.GLOBAL_ADMIN_ID);
 
@@ -122,53 +184,9 @@ export async function launchSingleBot(botData: any) {
   }
 }
 
-const server = express();
-server.use(express.json());
-
-// ✅ Исправлено: добавлены типы Request, Response
-server.post('/api/payments/callback', async (req: Request, res: Response) => {
-  const { order_id, status } = req.body; 
-
-  if (status !== 'paid') {
-    return res.status(200).send('OK');
-  }
-
-  try {
-    const invoice = await prisma.invoice.findUnique({ where: { id: order_id } });
-    if (!invoice || invoice.status === 'PAID') {
-      return res.status(404).send('Счет не найден или уже оплачен');
-    }
-
-    await prisma.invoice.update({
-      where: { id: order_id },
-      data: { status: 'PAID' }
-    });
-
-    await bookingService.createAppointment(invoice.botId, {
-      telegramId: Number(invoice.telegramId),
-      serviceId: invoice.serviceId,
-      employeeId: invoice.employeeId,
-      date: invoice.date,
-      time: invoice.time,
-      contact: invoice.contact
-    });
-
-    const botData = runningBots.get(invoice.botId);
-    if (botData) {
-      await botData.instance.telegram.sendMessage(
-        Number(invoice.telegramId),
-        `✅ *Оплата успешно получена!*\n\nВы успешно записаны. Детали можно посмотреть в меню «📋 Мои записи».`,
-        { parse_mode: 'Markdown' }
-      );
-    }
-
-    return res.status(200).send('SUCCESS');
-  } catch (error) {
-    console.error('Ошибка Webhook Платежа:', error);
-    return res.status(500).send('ERROR');
-  }
-});
-
+/**
+ * 4. ОБЩИЙ ЗАПУСК СИСТЕМЫ
+ */
 async function startSystem() {
   masterBot.launch().catch((err) => console.error('❌ Мастер-бот ошибка:', err.message));
   console.log('👑 Мастер-бот запущен.');
@@ -176,11 +194,9 @@ async function startSystem() {
   try {
     const allBots = await prisma.bot.findMany();
     const masterToken = process.env.MASTER_BOT_TOKEN;
-    // ✅ Исправлено: явный тип для 'b'
     const clientBots = allBots.filter((b: any) => b.token !== masterToken);
     
     console.log(`📡 Запуск ${clientBots.length} клиентских ботов из базы...`);
-    // ✅ Исправлено: явный тип для 'botData'
     const launchPromises = clientBots.map((botData: any) => {
       if (!runningBots.has(botData.id)) return launchSingleBot(botData);
       return Promise.resolve();
@@ -188,9 +204,6 @@ async function startSystem() {
 
     await Promise.allSettled(launchPromises);
     console.log(`🚀 Мульти-ботовая система инициализирована.`);
-
-    const PORT = process.env.PORT || 3000;
-    server.listen(PORT, () => console.log(`🌍 Express сервер платежей слушает порт: ${PORT}`));
 
     setInterval(healthCheckBots, 5 * 60 * 1000);
   } catch (err) {
